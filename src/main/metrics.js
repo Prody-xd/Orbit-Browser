@@ -13,10 +13,10 @@ const { app } = require('electron');
  */
 class MetricsSampler {
   /**
-   * @param {{tabs: import('./tabs').TabManager, getSettings: () => any, onSample: (sample: object) => void}} deps
+   * @param {{getTabs: () => import('./tabs').TabManager|null, getSettings: () => any, onSample: (sample?: object) => void}} deps
    */
-  constructor({ tabs, getSettings, onSample }) {
-    this.tabs = tabs;
+  constructor({ getTabs, getSettings, onSample }) {
+    this.getTabs = getTabs;
     this.getSettings = getSettings;
     this.onSample = onSample;
     this.subscribers = 0;
@@ -38,7 +38,7 @@ class MetricsSampler {
     const interval = Math.max(500, Number(this.getSettings().resources.metricsIntervalMs) || 2000);
     this.timer = setInterval(() => {
       try {
-        this.onSample(this.sample());
+        this.onSample();
       } catch (err) {
         console.warn('[metrics] fallo el muestreo:', err.message);
       }
@@ -59,12 +59,14 @@ class MetricsSampler {
     }
   }
 
-  sample() {
+  sample(tabs) {
+    const mgr = tabs ?? this.getTabs?.();
     const metrics = app.getAppMetrics();
 
     // pid -> pestana, para atribuir memoria y CPU a algo que el usuario reconoce.
     const pidToTab = new Map();
-    for (const tab of this.tabs.tabs.values()) {
+    const tabList = mgr ? [...mgr.tabs.values()] : [];
+    for (const tab of tabList) {
       const wc = tab.view?.webContents;
       if (!wc || wc.isDestroyed()) continue;
       try {
@@ -106,7 +108,7 @@ class MetricsSampler {
       bucket.cpu = round(bucket.cpu, 1);
     }
 
-    const tabsArr = [...this.tabs.tabs.values()];
+    const tabsArr = tabList;
 
     return {
       at: Date.now(),

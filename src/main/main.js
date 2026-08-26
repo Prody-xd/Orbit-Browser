@@ -1,19 +1,31 @@
 'use strict';
 
 const path = require('node:path');
+const os = require('node:os');
 const { app, session } = require('electron');
 
 const { registerSchemes, registerProtocol } = require('./protocol');
 const { readSettingsEarly, initSettings, getSettings, saveSettingsNow } = require('./settings');
 const { applyChromiumSwitches } = require('./switches');
 const { detectVisuals } = require('./platform');
-const { createShellWindow, createResizeController } = require('./window');
-const { TabManager, PARTITION } = require('./tabs');
+const { PARTITION } = require('./tabs');
 const { MetricsSampler } = require('./metrics');
 const { TrackerBlocker } = require('./blocker');
 const { NetworkActivity } = require('./network');
 const { JsonStore } = require('./store');
-const { registerIpc } = require('./ipc');
+const { registerIpc, wireShell } = require('./ipc');
+const { createHost } = require('./host');
+
+const SMOKE = process.env.VITRAL_SMOKE === '1';
+if (SMOKE) {
+  // Perfil aislado: no pisa la sesion real ni pelea el candado de instancia
+  // con un Orbit que el usuario tenga abierto.
+  app.setPath('userData', path.join(os.tmpdir(), 'orbit-smoke'));
+}
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId(SMOKE ? 'com.prodyxd.orbit-browser.smoke' : 'com.prodyxd.orbit-browser');
+}
 
 // Una sola instancia: dos procesos escribiendo la misma sesion y la misma
 // particion de disco es una forma segura de corromper ambas.
@@ -22,23 +34,18 @@ if (!app.requestSingleInstanceLock()) {
   return;
 }
 
-// Agrupa la app en la barra de tareas de Windows bajo nuestro nombre, no
-// bajo "Electron". Tiene que ir antes de crear ventanas.
-if (process.platform === 'win32') {
-  app.setAppUserModelId('com.prodyxd.orbit-browser');
-}
-
 // --- Antes de whenReady: Chromium lee sus switches una sola vez, al arrancar ---
 registerSchemes();
 const earlySettings = readSettingsEarly();
 const appliedSwitches = applyChromiumSwitches(earlySettings);
 const visuals = detectVisuals();
 
-/** @type {{window: import('electron').BrowserWindow, tabs: TabManager}|null} */
-let shell = null;
+/** @type {ReturnType<typeof createHost>|null} */
+let host = null;
 let sessionStore = null;
 
 app.on('second-instance', () => {
+  const shell = host?.focused();
   if (!shell) return;
   if (shell.window.isMinimized()) shell.window.restore();
   shell.window.focus();
@@ -56,45 +63,63 @@ app.whenReady().then(() => {
   hardenSession();
 
   const blocker = new TrackerBlocker({ partition: PARTITION, getSettings });
-
-  const { window, mode } = createShellWindow({ settings, visuals });
-  const resize = createResizeController(window);
-  const tabs = new TabManager({ window, getSettings });
-  const network = new NetworkActivity({ tabs });
+  const network = new NetworkActivity();
   blocker.onRequest = (details) => network.observe(details);
   blocker.install();
-  const metrics = new MetricsSampler({ tabs, getSettings, onSample: () => {} });
 
-  shell = { window, tabs };
+  const metrics = new MetricsSampler({
+    getTabs: () => host?.focused()?.tabs ?? null,
+    getSettings,
+    onSample: () => {},
+  });
+
+  host = createHost({
+    visuals,
+    network,
+    sessionStore,
+    saveSettingsNow,
+    restoreSession,
+    onShell: (shell) => wireShell(shell, { network }),
+  });
 
   registerIpc({
-    window,
-    tabs,
+    host,
     metrics,
     blocker,
     network,
-    resize,
     visuals,
     appliedSwitches,
-    windowMode: mode,
   });
 
-  // La UI arranca sin pestanas y pide la sesion cuando ya midio su layout,
-  // asi la ventana aparece de inmediato en vez de esperar a la red.
-  window.webContents.once('did-finish-load', () => restoreSession(tabs));
-
-  wireWindowPersistence(window, tabs);
+  host.restoreWindows();
 
   // Recorrido automatizado de verificacion, solo bajo demanda.
-  if (process.env.VITRAL_SMOKE === '1') {
+  if (SMOKE) {
     const smoke = require('./smoke');
-    smoke.watchConsole(window);
-    window.webContents.once('did-finish-load', () => {
-      smoke.runSmoke({ window, tabs, metrics, blocker, windowMode: mode }).catch((err) => {
-        console.error('[smoke] error:', err);
-        app.exit(1);
-      });
-    });
+    const first = host.list()[0];
+    if (first) {
+      smoke.watchConsole(first.window);
+      const run = () => {
+        smoke
+          .runSmoke({
+            window: first.window,
+            tabs: first.tabs,
+            metrics,
+            blocker,
+            windowMode: first.windowMode,
+            host,
+          })
+          .catch((err) => {
+            console.error('[smoke] error:', err);
+            app.exit(1);
+          });
+      };
+      if (first.window.webContents.isLoading()) {
+        first.window.webContents.once('did-finish-load', run);
+      } else {
+        run();
+      }
+    }
   }
 });
 
@@ -111,10 +136,12 @@ function hardenSession() {
   });
   ses.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
 
-  // Sin extensiones ni ventanas nativas nuevas: cada navegacion nueva termina
-  // siendo una pestana gestionada por TabManager.
+  // El chrome de Orbit no puede abrir ventanas sueltas. Las paginas de
+  // usuario si: Google y otros SSO necesitan un popup con window.opener.
   app.on('web-contents-created', (_e, contents) => {
-    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    if (contents.session !== ses) {
+      contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    }
   });
 }
 
@@ -144,41 +171,6 @@ function restoreSession(tabs) {
   });
 
   if (activeId != null) tabs.activate(activeId);
-}
-
-function wireWindowPersistence(window, tabs) {
-  const persistBounds = () => {
-    if (window.isDestroyed()) return;
-    const settings = getSettings();
-    settings.window.maximized = window.isMaximized();
-    if (!window.isMaximized() && !window.isFullScreen()) {
-      const bounds = window.getBounds();
-      Object.assign(settings.window, bounds);
-    }
-  };
-
-  let boundsTimer = null;
-  const scheduleBounds = () => {
-    if (boundsTimer) clearTimeout(boundsTimer);
-    boundsTimer = setTimeout(persistBounds, 400);
-    if (typeof boundsTimer.unref === 'function') boundsTimer.unref();
-  };
-  window.on('resize', scheduleBounds);
-  window.on('move', scheduleBounds);
-  window.on('maximize', scheduleBounds);
-  window.on('unmaximize', scheduleBounds);
-
-  window.on('close', () => {
-    persistBounds();
-    sessionStore.data = tabs.serializeSession();
-    sessionStore.saveNow();
-    saveSettingsNow();
-    tabs.dispose();
-  });
-
-  window.on('closed', () => {
-    shell = null;
-  });
 }
 
 // Un navegador personal no tiene sentido sin ventana: al cerrarla, se cierra.

@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('orbit', {
     mute: (id, muted) => ipcRenderer.invoke('tabs:mute', id, muted),
     move: (id, index) => ipcRenderer.invoke('tabs:move', id, index),
     menu: (id) => ipcRenderer.invoke('tabs:menu', id),
+    detach: (id, point) => ipcRenderer.invoke('tabs:detach', id, point),
     onUpdate: on('tabs:update'),
   },
 

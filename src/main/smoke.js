@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const settingsModule = require('./settings');
 
 /**
@@ -17,7 +17,7 @@ const settingsModule = require('./settings');
  *
  * Uso: `npm run smoke`
  */
-async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
+async function runSmoke({ window, tabs, metrics, blocker, windowMode, host }) {
   const outDir = path.join(app.getAppPath(), 'out', 'smoke');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -342,6 +342,31 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     const opened = await waitFor(() => tabs.order.length === tabsBefore + 1, 4000);
     check('Ctrl+T abre una pestana', opened, `${tabsBefore} -> ${tabs.order.length}`);
 
+    // --- 13b. los popups de OAuth conservan window.opener ---
+    const page = tabs.tabs.get(tabs.activeId)?.view?.webContents;
+    if (page && !page.isDestroyed()) {
+      const shellsBefore = new Set(host ? host.list().map((s) => s.window.id) : [window.id]);
+      const beforePopups = BrowserWindow.getAllWindows().length;
+      const openerOk = await withTimeout(
+        page.executeJavaScript(
+          `(() => {
+            const w = window.open('about:blank', 'orbit_oauth_test', 'width=420,height=520');
+            return Boolean(w && w.opener === window);
+          })()`,
+          true,
+        ),
+        4000,
+      );
+      check('window.open conserva window.opener', openerOk === true, String(openerOk));
+      const popped = await waitFor(() => BrowserWindow.getAllWindows().length > beforePopups, 4000);
+      check('window.open con tamano abre un popup', popped, `${BrowserWindow.getAllWindows().length} ventanas`);
+      for (const extra of BrowserWindow.getAllWindows()) {
+        if (extra.isDestroyed()) continue;
+        if (extra.id === window.id || shellsBefore.has(extra.id)) continue;
+        extra.close();
+      }
+    }
+
     // --- 14. los ajustes llegan al disco ---
     const settingsFile = path.join(app.getPath('userData'), 'settings.json');
     settingsModule.patchSettings({ appearance: { radius: 21 } });
@@ -350,6 +375,28 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     check('los ajustes se guardan en disco', onDisk.appearance?.radius === 21, `radius = ${onDisk.appearance?.radius}`);
     settingsModule.patchSettings({ appearance: { radius: 14 } });
     settingsModule.saveSettingsNow();
+
+    // --- 16. arrastrar una pestana fuera abre otra ventana ---
+    if (host) {
+      const beforeWindows = host.list().length;
+      const extraId = tabs.create('https://example.com/', { active: true });
+      await waitFor(() => {
+        const t = tabs.tabs.get(extraId);
+        return t && !t.loading && /example\.com/.test(t.url);
+      }, 12000);
+      const bounds = window.getBounds();
+      host.tearOff(host.list().find((s) => s.window === window) ?? host.list()[0], extraId, {
+        x: bounds.x + bounds.width + 80,
+        y: bounds.y + 48,
+      });
+      const torn = await waitFor(() => host.list().length === beforeWindows + 1, 6000);
+      check('separar una pestana abre otra ventana', torn, `${host.list().length} ventanas`);
+      const other = host.list().find((s) => s.window !== window);
+      check('la pestana vive en la ventana nueva', Boolean(other?.tabs.order.length), `${other?.tabs.order.length ?? 0} pestanas`);
+      check('la ventana original conserva pestanas', tabs.order.length >= 1, `${tabs.order.length} pestanas`);
+      if (other && !other.window.isDestroyed()) other.window.close();
+      await waitFor(() => host.list().length === beforeWindows, 4000);
+    }
 
     // --- 15. errores de consola en la UI ---
     check('la UI no dejo errores en consola', consoleErrors.length === 0, consoleErrors.join(' | ') || 'ninguno');

@@ -3,6 +3,7 @@
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { WebContentsView, shell } = require('electron');
+const { attachWindowOpen } = require('./popups');
 
 const PARTITION = 'persist:orbit';
 const PAGE_BACKGROUND = '#16161e';
@@ -36,6 +37,7 @@ class TabManager extends EventEmitter {
     this.pageBounds = { x: 0, y: 0, width: 800, height: 600 };
     this.borderRadius = 0;
     this._ignorePageMouse = false;
+    this._boundsReady = false;
 
     this._sweepTimer = setInterval(() => this._sweepIdle(), 15_000);
     if (typeof this._sweepTimer.unref === 'function') this._sweepTimer.unref();
@@ -50,6 +52,10 @@ class TabManager extends EventEmitter {
       }
     }
     return null;
+  }
+
+  contentsId(id) {
+    return wcIdOf(this.tabs.get(id));
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -79,6 +85,7 @@ class TabManager extends EventEmitter {
       lastActiveAt: Date.now(),
       scroll: { x: 0, y: 0 },
       _restoreScroll: false,
+      owner: this,
     };
 
     this.tabs.set(id, tab);
@@ -103,6 +110,7 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab) return;
 
+    const contentsId = wcIdOf(tab);
     this._destroyView(tab);
     this.tabs.delete(id);
     this.order = this.order.filter((x) => x !== id);
@@ -112,8 +120,78 @@ class TabManager extends EventEmitter {
       const next = this.order[this.order.length - 1];
       if (next != null) this.activate(next);
     }
-    this.emit('tab-closed', id);
+    this.emit('tab-closed', id, contentsId);
     this._emit();
+  }
+
+  /**
+   * Suelta una pestana viva para moverla a otra ventana. No destruye el
+   * proceso: el WebContentsView se reparenta en el destino.
+   */
+  detach(id) {
+    const tab = this.tabs.get(id);
+    if (!tab) return null;
+
+    if (tab.view) {
+      try {
+        this.window.contentView.removeChildView(tab.view);
+      } catch {
+        /* la ventana ya puede estar cerrada */
+      }
+      this._setViewVisible(tab.view, false);
+    }
+
+    this.tabs.delete(id);
+    this.order = this.order.filter((x) => x !== id);
+
+    if (this.activeId === id) {
+      this.activeId = null;
+      const next = this.order[this.order.length - 1];
+      if (next != null) this.activate(next);
+    }
+
+    this._emit();
+    return tab;
+  }
+
+  /**
+   * Engancha una pestana que venia de otra ventana. Reasigna el id para no
+   * chocar con las de este TabManager.
+   */
+  attach(tab, { waitForBounds = false } = {}) {
+    if (!tab) return null;
+    tab.owner = this;
+    tab.id = this.nextId++;
+    this.tabs.set(tab.id, tab);
+    this.order.push(tab.id);
+
+    if (this.activeId != null && this.activeId !== tab.id) {
+      const prev = this.tabs.get(this.activeId);
+      if (prev?.view) this._setViewVisible(prev.view, false);
+    }
+
+    this.activeId = tab.id;
+    tab.lastActiveAt = Date.now();
+
+    if (tab.view) {
+      this.window.contentView.addChildView(tab.view);
+      if (this._ignorePageMouse && typeof tab.view.setIgnoreMouseEvents === 'function') {
+        tab.view.setIgnoreMouseEvents(true);
+      }
+      const showNow = this._boundsReady && !waitForBounds;
+      this._setViewVisible(tab.view, showNow);
+      if (showNow) this._applyBounds(tab);
+    } else {
+      this.wake(tab.id, { activating: true });
+      if (tab.view && (waitForBounds || !this._boundsReady)) {
+        this._setViewVisible(tab.view, false);
+      }
+    }
+
+    this._enforceLiveLimit();
+    this.emit('activated', tab.id);
+    this._emit();
+    return tab.id;
   }
 
   activate(id) {
@@ -298,8 +376,12 @@ class TabManager extends EventEmitter {
       height: Math.max(1, Math.round(bounds.height)),
     };
     this.borderRadius = Math.round(radius);
+    this._boundsReady = true;
     const active = this.tabs.get(this.activeId);
-    if (active) this._applyBounds(active);
+    if (active?.view) {
+      this._setViewVisible(active.view, true);
+      this._applyBounds(active);
+    }
   }
 
   // ---------------------------------------------------------------- snapshot
@@ -413,26 +495,29 @@ class TabManager extends EventEmitter {
 
   _wire(tab) {
     const wc = tab.view.webContents;
+    const owner = () => tab.owner;
     const touch = () => {
+      const mgr = owner();
+      if (!mgr) return;
       const nav = wc.navigationHistory;
       tab.canGoBack = nav ? nav.canGoBack() : false;
       tab.canGoForward = nav ? nav.canGoForward() : false;
-      this._emit();
+      mgr._emit();
     };
 
     wc.on('page-title-updated', (_e, title) => {
       tab.title = title;
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('page-favicon-updated', (_e, icons) => {
       tab.favicon = icons?.[0] ?? null;
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('did-start-loading', () => {
       tab.loading = true;
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('did-stop-loading', () => {
@@ -441,9 +526,10 @@ class TabManager extends EventEmitter {
     });
 
     wc.on('did-navigate', (_e, url) => {
+      const mgr = owner();
       tab.url = url;
       tab.error = null;
-      this.emit('main-navigate', tab.id);
+      mgr?.emit('main-navigate', tab.id);
       touch();
     });
 
@@ -458,7 +544,7 @@ class TabManager extends EventEmitter {
       // -3 = ERR_ABORTED: pasa al cancelar una navegacion, no es un error real.
       if (!isMainFrame || code === -3) return;
       tab.error = { code, description, url };
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('did-finish-load', () => {
@@ -471,43 +557,42 @@ class TabManager extends EventEmitter {
 
     wc.on('audio-state-changed', (event) => {
       tab.audible = Boolean(event?.audible ?? wc.isCurrentlyAudible());
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('render-process-gone', (_e, details) => {
       // Si Chromium mata el renderer (OOM, crash), lo tratamos como una
       // pestana dormida: la metadata sobrevive y se puede recargar.
+      const mgr = owner();
       tab.crashed = details?.reason !== 'clean-exit';
-      this._destroyView(tab);
+      mgr?._destroyView(tab);
       tab.sleeping = true;
       tab.loading = false;
-      this._emit();
+      mgr?._emit();
     });
 
-    wc.setWindowOpenHandler(({ url, disposition }) => {
-      if (disposition === 'foreground-tab' || disposition === 'background-tab' || disposition === 'new-window') {
-        this.create(url, { active: disposition === 'foreground-tab' });
-        return { action: 'deny' };
-      }
-      return { action: 'deny' };
+    attachWindowOpen(wc, {
+      getParentWindow: () => owner()?.window ?? null,
+      openTab: (url, opts) => owner()?.create(url, opts),
     });
 
     wc.on('context-menu', (_e, params) => {
-      this.emit('page-context-menu', { tabId: tab.id, params });
+      owner()?.emit('page-context-menu', { tabId: tab.id, params });
     });
 
     wc.on('before-input-event', (event, input) => {
       // Los atajos del navegador tienen que funcionar tambien cuando el foco
       // esta dentro de la pagina, no solo en el chrome. Si no se interceptan
       // aqui, la pagina se los queda.
-      if (input.type !== 'keyDown') return;
+      const mgr = owner();
+      if (!mgr || input.type !== 'keyDown') return;
       const combo = comboOf(input);
       if (!combo || !SHORTCUTS.has(combo)) return;
       event.preventDefault();
       // Ctrl+, y Escape basculan: el auto-repeat los dejaria abriendo y
       // cerrando a la vez.
       if (input.isAutoRepeat && (combo === 'ctrl+,' || combo === 'escape')) return;
-      this.emit('shortcut', combo);
+      mgr.emit('shortcut', combo);
     });
 
     wc.on('will-navigate', (event, url) => {
@@ -616,6 +701,12 @@ function hostOf(url) {
   }
 }
 
+function wcIdOf(tab) {
+  const wc = tab?.view?.webContents;
+  if (!wc || wc.isDestroyed()) return null;
+  return wc.id;
+}
+
 function safePid(wc) {
   try {
     return wc.getOSProcessId();
@@ -645,4 +736,5 @@ module.exports = { TabManager, PARTITION };
  * @property {number} lastActiveAt
  * @property {{x:number,y:number}} scroll
  * @property {boolean} _restoreScroll
+ * @property {TabManager|null} owner
  */

@@ -12,10 +12,20 @@ const { BrowserWindow, screen } = require('electron');
  * canal alfa. Son caminos distintos y no se pueden combinar: `transparent`
  * y `backgroundMaterial` se excluyen.
  */
-function createShellWindow({ settings, visuals }) {
-  const { appearance, window: win } = settings;
+function createShellWindow({ settings, visuals, placement }) {
+  const { appearance, window: saved } = settings;
   const useMaterial = visuals.supportsBackgroundMaterial && appearance.surface === 'acrylic';
   const useTransparent = !useMaterial && appearance.surface !== 'opaque';
+
+  const win = placement
+    ? {
+        width: placement.width ?? saved.width,
+        height: placement.height ?? saved.height,
+        x: placement.x,
+        y: placement.y,
+        maximized: Boolean(placement.maximized),
+      }
+    : saved;
 
   const bounds = sanitizeBounds(win);
 

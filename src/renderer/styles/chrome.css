@@ -329,6 +329,19 @@ body.resizing-tabs {
   background: rgb(var(--rgb-base) / 0.35);
   transition: background var(--speed), color var(--speed), opacity var(--speed);
   -webkit-app-region: no-drag;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.tab.tearing {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+body.tearing-tab {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .tab:hover {
@@ -375,6 +388,8 @@ body.resizing-tabs {
   width: 15px;
   height: 15px;
   object-fit: contain;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .tab-favicon .dot {

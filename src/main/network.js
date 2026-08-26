@@ -8,25 +8,35 @@ const { EventEmitter } = require('node:events');
  * Corre en el mismo `onBeforeRequest` que el bloqueador: Electron solo admite
  * un listener de ese evento por sesion. Contar ahi es barato (un Map) y no
  * anade otro filtro de red.
+ *
+ * La clave es el id del WebContents, no el id de pestana: sobrevive al mover
+ * la pagina de una ventana a otra.
  */
 const FETCH_TYPES = new Set(['xhr', 'fetch', 'websocket']);
 const MAX_ENDPOINTS = 80;
 const MENU_LIMIT = 22;
 
 class NetworkActivity extends EventEmitter {
-  /**
-   * @param {{tabs: import('./tabs').TabManager}} deps
-   */
-  constructor({ tabs }) {
+  constructor() {
     super();
-    this.tabs = tabs;
+    /** @type {Set<import('./tabs').TabManager>} */
+    this.sources = new Set();
     /** @type {Map<number, {count: number, endpoints: Map<string, {url: string, count: number}>}>} */
-    this.byTab = new Map();
+    this.byContents = new Map();
     this._timer = null;
+  }
 
-    tabs.on('main-navigate', (id) => this.reset(id));
-    tabs.on('tab-closed', (id) => this.byTab.delete(id));
-    tabs.on('activated', () => this.emit('update', this.activeSnapshot()));
+  watch(tabs) {
+    if (!tabs || this.sources.has(tabs)) return;
+    this.sources.add(tabs);
+    tabs.on('main-navigate', (id) => {
+      const wcId = tabs.contentsId(id);
+      if (wcId != null) this.reset(wcId);
+    });
+    tabs.on('tab-closed', (_id, contentsId) => {
+      if (contentsId != null) this.byContents.delete(contentsId);
+    });
+    tabs.on('activated', () => this._schedule());
   }
 
   observe(details) {
@@ -34,16 +44,16 @@ class NetworkActivity extends EventEmitter {
     const url = String(details.url ?? '');
     if (!/^https?:/i.test(url)) return;
 
-    const tabId = this.tabs.idFromWebContentsId(details.webContentsId);
-    if (tabId == null) return;
+    const wcId = details.webContentsId;
+    if (wcId == null) return;
 
     const key = endpointKey(url);
     if (!key) return;
 
-    let log = this.byTab.get(tabId);
+    let log = this.byContents.get(wcId);
     if (!log) {
       log = { count: 0, endpoints: new Map() };
-      this.byTab.set(tabId, log);
+      this.byContents.set(wcId, log);
     }
 
     log.count++;
@@ -58,13 +68,13 @@ class NetworkActivity extends EventEmitter {
     this._schedule();
   }
 
-  reset(tabId) {
-    this.byTab.delete(tabId);
+  reset(contentsId) {
+    this.byContents.delete(contentsId);
     this._schedule();
   }
 
-  snapshot(tabId) {
-    const log = this.byTab.get(tabId);
+  snapshot(contentsId) {
+    const log = this.byContents.get(contentsId);
     if (!log) return { count: 0, endpoints: [] };
     const endpoints = [...log.endpoints.entries()]
       .map(([key, entry]) => ({ key, url: entry.url, count: entry.count }))
@@ -72,15 +82,16 @@ class NetworkActivity extends EventEmitter {
     return { count: log.count, endpoints };
   }
 
-  activeSnapshot() {
-    return this.snapshot(this.tabs.activeId);
+  snapshotFor(tabs) {
+    if (!tabs) return { count: 0, endpoints: [] };
+    return this.snapshot(tabs.contentsId(tabs.activeId));
   }
 
   _schedule() {
     if (this._timer) return;
     this._timer = setTimeout(() => {
       this._timer = null;
-      this.emit('update', this.activeSnapshot());
+      this.emit('update');
     }, 160);
     if (typeof this._timer.unref === 'function') this._timer.unref();
   }

@@ -14,12 +14,13 @@ let popup = null;
  * transparente si: se coloca sobre la pagina nativa y usa las variables CSS
  * del tema activo.
  */
-function showNetworkPopup({ parent, network, anchor = {} }) {
+function showNetworkPopup({ parent, network, tabs, anchor = {} }) {
   if (!parent || parent.isDestroyed()) return;
   closeNetworkPopup();
 
   const theme = chromeVars();
-  const snap = network.activeSnapshot();
+  const snapNow = () => network.snapshotFor(tabs);
+  const snap = snapNow();
   const size = popupSize(snap);
   const pos = placePopup(parent, anchor, size);
 
@@ -62,7 +63,8 @@ function showNetworkPopup({ parent, network, anchor = {} }) {
     if (!popup.isDestroyed()) popup.show();
   });
 
-  const onUpdate = (next) => {
+  const onUpdate = () => {
+    const next = snapNow();
     send('network-popup:update', next);
     if (popup && !popup.isDestroyed()) {
       const nextSize = popupSize(next);
@@ -76,10 +78,13 @@ function showNetworkPopup({ parent, network, anchor = {} }) {
 
   const onCopy = (_e, text) => clipboard.writeText(String(text ?? ''));
   const onCopyAll = () => {
-    const current = network.activeSnapshot();
+    const current = snapNow();
     clipboard.writeText(current.endpoints.map((entry) => `${entry.count}\t${entry.key}`).join('\n'));
   };
-  const onReset = () => network.reset(network.tabs.activeId);
+  const onReset = () => {
+    const wcId = tabs?.contentsId?.(tabs.activeId);
+    if (wcId != null) network.reset(wcId);
+  };
   const onClose = () => closeNetworkPopup();
 
   ipcMain.on('network-popup:copy', onCopy);
