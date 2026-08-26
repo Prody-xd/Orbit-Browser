@@ -83,6 +83,10 @@ function showTabMenu({ tabs, tabId, window }) {
       label: tab.sleeping ? 'Despertar' : 'Dormir',
       click: () => (tab.sleeping ? tabs.wake(tabId) : tabs.sleep(tabId, { force: true })),
     },
+    {
+      label: tab.muted ? 'Activar sonido' : 'Silenciar pestaña',
+      click: () => tabs.setMuted(tabId, !tab.muted),
+    },
     { label: 'Dormir las demás', click: () => tabs.sleepAllButActive() },
     { type: 'separator' },
     { label: 'Copiar dirección', click: () => clipboard.writeText(tab.url) },

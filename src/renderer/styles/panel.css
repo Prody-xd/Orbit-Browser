@@ -7,7 +7,7 @@
  */
 
 .panel {
-  display: flex;
+  display: none !important;
   flex-direction: column;
   width: 380px;
   flex: 0 0 380px;
@@ -17,10 +17,28 @@
   backdrop-filter: blur(var(--blur));
   overflow: hidden;
   box-shadow: 0 0 calc(var(--glow-strength) * 0.7) rgb(var(--rgb-border) / var(--glow-alpha));
+  -webkit-app-region: no-drag;
 }
 
-.panel[hidden] {
-  display: none;
+.panel.is-open {
+  display: flex !important;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid rgb(var(--rgb-border) / 0.6);
+}
+
+.panel-head .icon-btn {
+  margin-right: 6px;
+}
+
+.panel-head .panel-tabs {
+  flex: 1;
+  border-bottom: 0;
 }
 
 .panel-tabs {

@@ -115,6 +115,7 @@ body.surface-opaque {
   flex: 1;
   display: flex;
   min-height: 0;
+  min-width: 0;
   padding: var(--inset);
   padding-top: 0;
   gap: var(--inset);

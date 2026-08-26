@@ -29,13 +29,21 @@ contextBridge.exposeInMainWorld('orbit', {
     back: (id) => ipcRenderer.invoke('tabs:back', id),
     forward: (id) => ipcRenderer.invoke('tabs:forward', id),
     pin: (id, pinned) => ipcRenderer.invoke('tabs:pin', id, pinned),
+    mute: (id, muted) => ipcRenderer.invoke('tabs:mute', id, muted),
     move: (id, index) => ipcRenderer.invoke('tabs:move', id, index),
     menu: (id) => ipcRenderer.invoke('tabs:menu', id),
     onUpdate: on('tabs:update'),
   },
 
+  network: {
+    snapshot: () => ipcRenderer.invoke('network:snapshot'),
+    menu: (anchor) => ipcRenderer.send('network:menu', anchor),
+    onUpdate: on('network:update'),
+  },
+
   layout: {
     setPageBounds: (bounds, radius) => ipcRenderer.send('layout:pageBounds', bounds, radius),
+    ignorePageMouse: (ignore) => ipcRenderer.send('layout:ignorePageMouse', ignore),
   },
 
   settings: {

@@ -11,6 +11,7 @@ const { createShellWindow, createResizeController } = require('./window');
 const { TabManager, PARTITION } = require('./tabs');
 const { MetricsSampler } = require('./metrics');
 const { TrackerBlocker } = require('./blocker');
+const { NetworkActivity } = require('./network');
 const { JsonStore } = require('./store');
 const { registerIpc } = require('./ipc');
 
@@ -55,11 +56,13 @@ app.whenReady().then(() => {
   hardenSession();
 
   const blocker = new TrackerBlocker({ partition: PARTITION, getSettings });
-  blocker.install();
 
   const { window, mode } = createShellWindow({ settings, visuals });
   const resize = createResizeController(window);
   const tabs = new TabManager({ window, getSettings });
+  const network = new NetworkActivity({ tabs });
+  blocker.onRequest = (details) => network.observe(details);
+  blocker.install();
   const metrics = new MetricsSampler({ tabs, getSettings, onSample: () => {} });
 
   shell = { window, tabs };
@@ -69,6 +72,7 @@ app.whenReady().then(() => {
     tabs,
     metrics,
     blocker,
+    network,
     resize,
     visuals,
     appliedSwitches,

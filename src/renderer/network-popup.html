@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Red</title>
+    <link rel="stylesheet" href="network-popup.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="head" id="head">Solicitudes fetch</header>
+      <div class="list" id="list"></div>
+      <footer class="foot">
+        <button type="button" id="btn-copy-all">Copiar todos los endpoints</button>
+        <button type="button" id="btn-reset">Restablecer recuento</button>
+      </footer>
+    </div>
+    <script src="network-popup.js"></script>
+  </body>
+</html>

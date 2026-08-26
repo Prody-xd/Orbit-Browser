@@ -13,7 +13,7 @@ export function createTabstrip(container) {
 
   function render(snapshot) {
     const next = snapshot.tabs
-      .map((t) => `${t.id}:${t.title}:${t.favicon ?? ''}:${t.loading}:${t.sleeping}:${t.pinned}:${t.audible}`)
+      .map((t) => `${t.id}:${t.title}:${t.favicon ?? ''}:${t.loading}:${t.sleeping}:${t.pinned}:${t.audible}:${t.muted}`)
       .join('|') + `#${snapshot.activeId}`;
     if (next === signature) return;
     signature = next;
@@ -27,6 +27,8 @@ export function createTabstrip(container) {
     if (tab.id === activeId) classes.push('active');
     if (tab.sleeping) classes.push('sleeping');
     if (tab.pinned) classes.push('pinned');
+    if (tab.audible) classes.push('audible');
+    if (tab.muted) classes.push('muted');
 
     const favicon = h('div.tab-favicon', { class: tab.loading ? 'spin' : null }, [
       tab.favicon ? h('img', { src: tab.favicon, on: { error: (e) => e.target.remove() } }) : h('div.dot'),
@@ -55,7 +57,16 @@ export function createTabstrip(container) {
       [
         favicon,
         h('div.tab-title', { text: tab.title }),
-        tab.audible ? h('div.tab-badge', { text: '♪', title: 'Reproduciendo audio' }) : null,
+        h('button.tab-mute', {
+          html: tab.muted ? icons.speakerOff : icons.speaker,
+          title: tab.muted ? 'Activar sonido' : 'Silenciar esta pestaña',
+          on: {
+            click: (event) => {
+              event.stopPropagation();
+              window.orbit.tabs.mute(tab.id, !tab.muted);
+            },
+          },
+        }),
         tab.sleeping ? h('div.tab-badge', { text: 'z', title: 'Dormida: no gasta memoria' }) : null,
         h('button.tab-close', {
           html: icons.close,

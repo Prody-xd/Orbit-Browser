@@ -31,6 +31,10 @@ const DEFAULTS = {
     fontScale: 1,
     /** Desenfoque CSS interno del chrome (no afecta al escritorio). */
     chromeBlur: 20,
+    /** top | left | right */
+    tabStrip: 'top',
+    /** Ancho del rail de pestañas cuando está a un lado. */
+    tabStripWidth: 214,
   },
 
   resources: {

@@ -1,6 +1,6 @@
 import { $ } from './dom.js';
 import { applyTheme } from './theme.js';
-import { startLayoutSync, mountResizers, mountWindowControls, enableTitlebarDoubleClick } from './layout.js';
+import { startLayoutSync, mountResizers, mountWindowControls, enableTitlebarDoubleClick, applyTabStripPosition, mountTabRailResize } from './layout.js';
 import { createTabstrip } from './tabstrip.js';
 import { createToolbar } from './toolbar.js';
 import { createPanel } from './panel.js';
@@ -50,26 +50,46 @@ async function main() {
 
   const theme = state.themes.find((t) => t.id === state.settings.appearance.theme) ?? state.themes[0];
   applyTheme(theme, state.settings.appearance, state.visuals);
+  applyTabStripPosition(state.settings.appearance.tabStrip, state.settings.appearance.tabStripWidth);
 
   const applyWindowState = mountWindowControls(document.body);
   applyWindowState(boot.windowState);
   mountResizers($('#resizers'));
-  enableTitlebarDoubleClick($('#titlebar'));
+  enableTitlebarDoubleClick($('#titlebar'), $('#toolbar'), $('#tabs-host-side'));
+  mountTabRailResize({
+    onLive: (width) => {
+      state.settings.appearance.tabStripWidth = width;
+      pushLayout?.();
+    },
+    onCommit: (width) => {
+      state.settings.appearance.tabStripWidth = width;
+      api.settings.patch({ appearance: { tabStripWidth: width } });
+    },
+  });
 
   tabstrip = createTabstrip($('#tabstrip'));
-  toolbar = createToolbar({ onOpenPanel: togglePanel });
+  toolbar = createToolbar({
+    onOpenPanel: () => togglePanel(),
+    onClosePanel: () => togglePanel(false),
+  });
   panel = createPanel({
     container: $('#panel-body'),
     tabsEl: $('#panel-tabs'),
     state,
     onSectionChange: () => pushLayout?.(),
+    onLayoutChange: () => {
+      applyTabStripPosition(state.settings.appearance.tabStrip, state.settings.appearance.tabStripWidth);
+      pushLayout?.();
+    },
   });
 
   pushLayout = startLayoutSync($('#page-slot'));
 
   renderTabs(state.tabs);
+  toolbar.renderNetwork(boot.network ?? { count: 0 });
 
   api.tabs.onUpdate((snapshot) => renderTabs(snapshot));
+  api.network.onUpdate((snapshot) => toolbar.renderNetwork(snapshot));
   api.window.onState((windowState) => {
     applyWindowState(windowState);
     // El redondeo cambia al maximizar, y con el el rectangulo de la pagina.
@@ -77,6 +97,7 @@ async function main() {
   });
   api.settings.onChange((settings) => {
     state.settings = settings;
+    applyTabStripPosition(settings.appearance?.tabStrip, settings.appearance?.tabStripWidth);
   });
   api.app.onShortcut(handleCombo);
 
@@ -93,15 +114,20 @@ function renderTabs(snapshot) {
 // ------------------------------------------------------------------ panel
 
 async function togglePanel(force) {
-  const next = force ?? !panelOpen;
-  if (next === panelOpen) return;
+  const el = $('#panel');
+  const currentlyOpen = el.classList.contains('is-open');
+  const next = typeof force === 'boolean' ? force : !currentlyOpen;
   panelOpen = next;
 
-  const el = $('#panel');
-  el.hidden = !panelOpen;
-  $('#btn-panel').classList.toggle('active', panelOpen);
+  el.classList.toggle('is-open', next);
+  el.toggleAttribute('hidden', !next);
+  $('#btn-panel').classList.toggle('active', next);
+  // Encoger o agrandar la pagina ya, sin esperar a las metricas.
+  pushLayout?.();
 
-  if (panelOpen) {
+  if (next === currentlyOpen) return;
+
+  if (next) {
     // Las metricas solo se muestrean con el panel abierto: mirar el consumo no
     // deberia ser una de las cosas que consume.
     if (!state.blockerStats) state.blockerStats = await api.resources.blockerStats();
@@ -110,9 +136,6 @@ async function togglePanel(force) {
   } else {
     await api.resources.unsubscribe();
   }
-
-  // El panel se acopla, asi que el hueco de la pagina cambia de tamano.
-  pushLayout?.();
 }
 
 api.resources.onSample((sample) => {
@@ -121,7 +144,30 @@ api.resources.onSample((sample) => {
 
 // -------------------------------------------------------------- atajos
 
+let panelShortcutLock = false;
+
+function requestPanelToggle() {
+  if (panelShortcutLock) return;
+  panelShortcutLock = true;
+  // El chrome y la pagina pueden mandar el mismo Ctrl+, con unos ms de
+  // diferencia. Sin este candado, el segundo evento vuelve a abrir el panel.
+  setTimeout(() => {
+    panelShortcutLock = false;
+  }, 80);
+  togglePanel();
+}
+
 function onKeyDown(event) {
+  // `event.code` no depende del idioma del teclado: Ctrl+, tiene que cerrar
+  // igual en un teclado español. `repeat` se ignora: si no, al mantener la
+  // tecla el panel abre y cierra en bucle y parece que no se cierra.
+  if (event.ctrlKey && !event.altKey && !event.shiftKey && event.code === 'Comma') {
+    event.preventDefault();
+    if (event.repeat) return;
+    requestPanelToggle();
+    return;
+  }
+
   const combo = comboOf(event);
   if (!combo) return;
   // En la barra de direcciones, Enter y Escape los gestiona la propia barra.
@@ -136,7 +182,7 @@ function comboOf(event) {
   if (event.ctrlKey) parts.push('ctrl');
   if (event.altKey) parts.push('alt');
   if (event.shiftKey) parts.push('shift');
-  parts.push({ arrowleft: 'left', arrowright: 'right' }[key] ?? key);
+  parts.push({ arrowleft: 'left', arrowright: 'right', comma: ',' }[key] ?? key);
   return parts.join('+');
 }
 
@@ -173,8 +219,14 @@ function handleCombo(combo) {
       cycleTab(-1);
       return true;
     case 'ctrl+,':
-      togglePanel();
+      requestPanelToggle();
       return true;
+    case 'escape':
+      if (panelOpen) {
+        togglePanel(false);
+        return true;
+      }
+      return false;
     case 'f6':
       // Dormir el resto: el atajo para recuperar memoria de golpe.
       api.tabs.sleepOthers();

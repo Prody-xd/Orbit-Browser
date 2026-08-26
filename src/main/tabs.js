@@ -35,9 +35,21 @@ class TabManager extends EventEmitter {
     this.nextId = 1;
     this.pageBounds = { x: 0, y: 0, width: 800, height: 600 };
     this.borderRadius = 0;
+    this._ignorePageMouse = false;
 
     this._sweepTimer = setInterval(() => this._sweepIdle(), 15_000);
     if (typeof this._sweepTimer.unref === 'function') this._sweepTimer.unref();
+  }
+
+  /** Relaciona el id de un WebContents de pagina con la pestana que lo posee. */
+  idFromWebContentsId(webContentsId) {
+    if (webContentsId == null) return null;
+    for (const tab of this.tabs.values()) {
+      if (tab.view && !tab.view.webContents.isDestroyed() && tab.view.webContents.id === webContentsId) {
+        return tab.id;
+      }
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -59,6 +71,7 @@ class TabManager extends EventEmitter {
       pinned: Boolean(opts.pinned),
       loading: false,
       audible: false,
+      muted: false,
       crashed: false,
       error: null,
       canGoBack: false,
@@ -99,6 +112,7 @@ class TabManager extends EventEmitter {
       const next = this.order[this.order.length - 1];
       if (next != null) this.activate(next);
     }
+    this.emit('tab-closed', id);
     this._emit();
   }
 
@@ -121,6 +135,7 @@ class TabManager extends EventEmitter {
     }
 
     this._enforceLiveLimit();
+    this.emit('activated', id);
     this._emit();
   }
 
@@ -237,6 +252,15 @@ class TabManager extends EventEmitter {
     this._emit();
   }
 
+  setMuted(id, muted) {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    tab.muted = Boolean(muted);
+    const wc = tab.view?.webContents;
+    if (wc && !wc.isDestroyed()) wc.setAudioMuted(tab.muted);
+    this._emit();
+  }
+
   move(id, toIndex) {
     const from = this.order.indexOf(id);
     if (from < 0) return;
@@ -251,6 +275,19 @@ class TabManager extends EventEmitter {
   }
 
   // ------------------------------------------------------------------ layout
+
+  /**
+   * Durante un arrastre del chrome (rail de pestañas), la pagina no debe
+   * comerse el cursor: es una vista nativa encima del HTML.
+   */
+  setPageIgnoreMouse(ignore) {
+    this._ignorePageMouse = Boolean(ignore);
+    for (const tab of this.tabs.values()) {
+      if (tab.view && typeof tab.view.setIgnoreMouseEvents === 'function') {
+        tab.view.setIgnoreMouseEvents(this._ignorePageMouse);
+      }
+    }
+  }
 
   /** El renderer manda el rectangulo del hueco de la pagina medido en CSS. */
   setPageBounds(bounds, radius = 0) {
@@ -282,6 +319,7 @@ class TabManager extends EventEmitter {
           pinned: t.pinned,
           loading: t.loading,
           audible: t.audible,
+          muted: Boolean(t.muted),
           crashed: t.crashed,
           error: t.error,
           canGoBack: t.canGoBack,
@@ -333,10 +371,14 @@ class TabManager extends EventEmitter {
 
     view.setBackgroundColor(PAGE_BACKGROUND);
     tab.view = view;
+    if (this._ignorePageMouse && typeof view.setIgnoreMouseEvents === 'function') {
+      view.setIgnoreMouseEvents(true);
+    }
     this.window.contentView.addChildView(view);
     this._setViewVisible(view, false);
     this._applyBounds(tab);
     this._wire(tab);
+    if (tab.muted) view.webContents.setAudioMuted(true);
 
     view.webContents.loadURL(tab.url).catch(() => {});
   }
@@ -401,6 +443,7 @@ class TabManager extends EventEmitter {
     wc.on('did-navigate', (_e, url) => {
       tab.url = url;
       tab.error = null;
+      this.emit('main-navigate', tab.id);
       touch();
     });
 
@@ -459,10 +502,12 @@ class TabManager extends EventEmitter {
       // aqui, la pagina se los queda.
       if (input.type !== 'keyDown') return;
       const combo = comboOf(input);
-      if (combo && SHORTCUTS.has(combo)) {
-        event.preventDefault();
-        this.emit('shortcut', combo);
-      }
+      if (!combo || !SHORTCUTS.has(combo)) return;
+      event.preventDefault();
+      // Ctrl+, y Escape basculan: el auto-repeat los dejaria abriendo y
+      // cerrando a la vez.
+      if (input.isAutoRepeat && (combo === 'ctrl+,' || combo === 'escape')) return;
+      this.emit('shortcut', combo);
     });
 
     wc.on('will-navigate', (event, url) => {
@@ -556,7 +601,7 @@ function comboOf(input) {
   if (input.control) parts.push('ctrl');
   if (input.alt) parts.push('alt');
   if (input.shift) parts.push('shift');
-  const named = { arrowleft: 'left', arrowright: 'right' }[key] ?? key;
+  const named = { arrowleft: 'left', arrowright: 'right', comma: ',' }[key] ?? key;
   parts.push(named);
   // Orden fijo: ctrl+alt+shift+tecla, para poder comparar cadenas.
   const order = { ctrl: 0, alt: 1, shift: 2 };
@@ -592,6 +637,7 @@ module.exports = { TabManager, PARTITION };
  * @property {boolean} pinned
  * @property {boolean} loading
  * @property {boolean} audible
+ * @property {boolean} muted
  * @property {boolean} crashed
  * @property {{code:number,description:string,url:string}|null} error
  * @property {boolean} canGoBack

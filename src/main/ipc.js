@@ -4,6 +4,7 @@ const { ipcMain, app, shell, clipboard } = require('electron');
 const settingsModule = require('./settings');
 const themes = require('./themes');
 const { showPageMenu, showTabMenu } = require('./menus');
+const { showNetworkPopup } = require('./network-popup');
 
 /**
  * Puente entre la UI y el proceso principal.
@@ -12,7 +13,7 @@ const { showPageMenu, showTabMenu } = require('./menus');
  * activo y sin Node en la UI. El renderer solo puede pedir cosas de esta lista.
  */
 function registerIpc(ctx) {
-  const { window, tabs, metrics, blocker, resize, visuals, appliedSwitches, windowMode } = ctx;
+  const { window, tabs, metrics, blocker, network, resize, visuals, appliedSwitches, windowMode } = ctx;
 
   const send = (channel, payload) => {
     if (!window.isDestroyed()) window.webContents.send(channel, payload);
@@ -22,6 +23,9 @@ function registerIpc(ctx) {
   tabs.on('update', (snapshot) => send('tabs:update', snapshot));
   tabs.on('shortcut', (combo) => send('app:shortcut', combo));
   tabs.on('page-context-menu', ({ tabId, params }) => showPageMenu({ tabs, tabId, params, window }));
+  if (network) {
+    network.on('update', (snapshot) => send('network:update', snapshot));
+  }
   metrics.onSample = (sample) => send('metrics:sample', sample);
 
   const pushWindowState = () => {
@@ -49,6 +53,7 @@ function registerIpc(ctx) {
     windowMode,
     appliedSwitches,
     tabs: tabs.snapshot(),
+    network: network ? network.activeSnapshot() : { count: 0, endpoints: [] },
     windowState: { maximized: window.isMaximized(), fullscreen: window.isFullScreen(), focused: window.isFocused() },
     versions: {
       app: app.getVersion(),
@@ -74,11 +79,15 @@ function registerIpc(ctx) {
   ipcMain.handle('tabs:back', (_e, id) => tabs.goBack(id));
   ipcMain.handle('tabs:forward', (_e, id) => tabs.goForward(id));
   ipcMain.handle('tabs:pin', (_e, id, pinned) => tabs.setPinned(id, pinned));
+  ipcMain.handle('tabs:mute', (_e, id, muted) => tabs.setMuted(id, muted));
   ipcMain.handle('tabs:move', (_e, id, index) => tabs.move(id, index));
   ipcMain.handle('tabs:menu', (_e, id) => showTabMenu({ tabs, tabId: id, window }));
+  ipcMain.on('network:menu', (_e, anchor) => showNetworkPopup({ network, parent: window, anchor }));
+  ipcMain.handle('network:snapshot', () => (network ? network.activeSnapshot() : { count: 0, endpoints: [] }));
 
   // --- layout: la UI mide el hueco de la pagina y el main coloca la vista ---
   ipcMain.on('layout:pageBounds', (_e, bounds, radius) => tabs.setPageBounds(bounds, radius));
+  ipcMain.on('layout:ignorePageMouse', (_e, ignore) => tabs.setPageIgnoreMouse(Boolean(ignore)));
 
   // --- ajustes ---
   ipcMain.handle('settings:patch', (_e, patch) => {

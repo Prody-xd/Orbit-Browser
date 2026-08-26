@@ -12,7 +12,7 @@
     "dev": "electron . --dev",
     "smoke": "node scripts/smoke.js",
     "icon": "node scripts/make-icon.js",
-    "dist": "node scripts/make-icon.js && electron-builder --win nsis",
+    "dist": "node scripts/make-icon.js && electron-builder --win nsis --x64",
     "dist:dir": "node scripts/make-icon.js && electron-builder --win --dir"
   },
   "devDependencies": {

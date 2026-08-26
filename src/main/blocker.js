@@ -99,6 +99,7 @@ class TrackerBlocker {
 
     const ses = session.fromPartition(this.partition);
     ses.webRequest.onBeforeRequest((details, callback) => {
+      this.onRequest?.(details);
       if (!this.getSettings().browsing.blockTrackers) return callback({});
       // Nunca bloqueamos el documento principal: si te equivocas en una regla,
       // no quieres que una pagina entera deje de cargar.

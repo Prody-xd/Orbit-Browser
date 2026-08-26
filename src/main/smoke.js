@@ -148,6 +148,17 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     check('el bloqueador tiene reglas cargadas', stats.rules > 10, `${stats.rules} dominios`);
     log(`peticiones bloqueadas hasta ahora: ${stats.blockedCount}`);
 
+    const netInBar = await window.webContents.executeJavaScript(
+      `(() => {
+        const net = document.getElementById('btn-network');
+        const statsEl = document.getElementById('tab-stats');
+        if (!net || !statsEl) return false;
+        return Boolean(net.compareDocumentPosition(statsEl) & Node.DOCUMENT_POSITION_FOLLOWING);
+      })()`,
+      true,
+    );
+    check('el recuento de fetch esta a la izquierda de las pestañas vivas', netInBar);
+
     // --- 9. la UI responde: abrir el panel encoge el hueco de la pagina ---
     const widthBefore = tabs.pageBounds.width;
     await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
@@ -157,6 +168,28 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
       tabs.pageBounds.width < widthBefore - 100,
       `${widthBefore} -> ${tabs.pageBounds.width}`,
     );
+
+    const widthOpen = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
+    const closed = await waitFor(() => tabs.pageBounds.width > widthOpen + 80, 4000);
+    check(
+      'el mismo boton cierra el panel',
+      closed && tabs.pageBounds.width > widthOpen + 80,
+      `${widthOpen} -> ${tabs.pageBounds.width}`,
+    );
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
+    await waitFor(() => tabs.pageBounds.width < widthBefore - 100, 4000);
+    const widthOpenAgain = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel-close').click()", true);
+    const closedByX = await waitFor(() => tabs.pageBounds.width > widthOpenAgain + 80, 4000);
+    check(
+      'la X del panel lo cierra',
+      closedByX && tabs.pageBounds.width > widthOpenAgain + 80,
+      `${widthOpenAgain} -> ${tabs.pageBounds.width}`,
+    );
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
+    await waitFor(() => tabs.pageBounds.width < widthBefore - 100, 4000);
+
     await wait(1500);
     await shot('05-panel-recursos', window.webContents);
 
@@ -210,6 +243,71 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     );
     check('el tema neon rojo existe y se aplica', neonClicked && glow === '18px', `glow=${glow}`);
     await shot('07-tema-neon-rojo', window.webContents);
+
+    const moved = await window.webContents.executeJavaScript(
+      `(() => {
+        const select = [...document.querySelectorAll('select')].find((el) =>
+          [...el.options].some((o) => o.value === 'left'),
+        );
+        if (!select) return false;
+        select.value = 'left';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`,
+      true,
+    );
+    await wait(700);
+    const railHidden = await window.webContents.executeJavaScript(
+      "document.getElementById('tabs-host-side')?.hidden === false && document.body.classList.contains('tabs-side')",
+      true,
+    );
+    check('las pestanas se pueden mover a un lado', moved && railHidden);
+    const widthSide = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript(
+      "document.documentElement.style.setProperty('--tab-rail', '320px')",
+      true,
+    );
+    const widened = await waitFor(() => tabs.pageBounds.width < widthSide - 60, 4000);
+    check(
+      'el rail izquierdo se puede ensanchar',
+      widened && tabs.pageBounds.width < widthSide - 60,
+      `${widthSide} -> ${tabs.pageBounds.width}`,
+    );
+    const widthWide = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript(
+      `(() => {
+        document.documentElement.style.setProperty('--tab-rail', '52px');
+        document.body.classList.add('tabs-compact');
+      })()`,
+      true,
+    );
+    const compacted = await waitFor(() => tabs.pageBounds.width > widthWide + 80, 4000);
+    const titlesHidden = await window.webContents.executeJavaScript(
+      `(() => {
+        const title = document.querySelector('.tabs-host-side .tab-title');
+        return !title || getComputedStyle(title).display === 'none';
+      })()`,
+      true,
+    );
+    check(
+      'el rail se puede dejar en solo iconos',
+      compacted && titlesHidden,
+      `${widthWide} -> ${tabs.pageBounds.width}`,
+    );
+    await shot('08-pestanas-izquierda', window.webContents);
+    await window.webContents.executeJavaScript(
+      `(() => {
+        const select = [...document.querySelectorAll('select')].find((el) =>
+          [...el.options].some((o) => o.value === 'top'),
+        );
+        if (!select) return;
+        select.value = 'top';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`,
+      true,
+    );
+    await wait(400);
+
     await window.webContents.executeJavaScript(
       `([...document.querySelectorAll('.theme-card')].find((el) => /noche/i.test(el.textContent)) || document.querySelector('.theme-card'))?.click()`,
       true,

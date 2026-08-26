@@ -22,7 +22,7 @@ const SECTIONS = [
  *    pestaña, o al reiniciar. Chromium lee algunos parámetros una sola vez al
  *    arrancar, y fingir lo contrario solo confunde.
  */
-export function createPanel({ container, tabsEl, state, onSectionChange }) {
+export function createPanel({ container, tabsEl, state, onSectionChange, onLayoutChange }) {
   let section = 'recursos';
   let metricsBox = null;
   let sample = null;
@@ -519,6 +519,25 @@ export function createPanel({ container, tabsEl, state, onSectionChange }) {
       container,
       h('div.section', {}, [
         h('div.section-title', { text: 'Forma y color' }),
+
+        row(
+          'Pestañas',
+          'Arriba es la barra clásica. A un lado, arrastra el borde hasta dejar solo el icono. El hueco vacío mueve la ventana.',
+          select(
+            [
+              ['top', 'Arriba'],
+              ['left', 'Izquierda'],
+              ['right', 'Derecha'],
+            ],
+            a.tabStrip ?? 'top',
+            async (value) => {
+              a.tabStrip = value;
+              await patchQuiet({ appearance: { tabStrip: value } });
+              onLayoutChange?.();
+              render();
+            },
+          ),
+        ),
 
         row(
           'Color de acento',
