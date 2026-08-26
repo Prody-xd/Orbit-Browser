@@ -1,0 +1,274 @@
+/* Barra de pestanas, controles de ventana y barra de navegacion. */
+
+.titlebar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 40px;
+  padding: 6px 0 0 8px;
+  background: rgb(var(--rgb-chrome) / var(--alpha-chrome));
+  backdrop-filter: blur(var(--blur));
+  -webkit-app-region: drag;
+}
+
+.drag-fill {
+  flex: 1;
+  align-self: stretch;
+  min-width: 24px;
+  -webkit-app-region: drag;
+}
+
+.tabstrip {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  max-width: calc(100% - 220px);
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 44px;
+  max-width: 210px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  border-radius: 9px 9px 0 0;
+  color: var(--c-muted);
+  background: rgb(var(--rgb-base) / 0.35);
+  transition: background var(--speed), color var(--speed), opacity var(--speed);
+  -webkit-app-region: no-drag;
+}
+
+.tab:hover {
+  background: rgb(var(--rgb-elevated) / 0.8);
+  color: var(--c-text);
+}
+
+.tab.active {
+  background: rgb(var(--rgb-base) / var(--alpha-shell));
+  color: var(--c-text);
+  box-shadow: inset 0 1.5px 0 var(--c-accent);
+}
+
+/* Una pestana dormida no gasta un proceso. Se marca en vez de esconderlo,
+   para que se entienda por que el navegador va ligero. */
+.tab.sleeping {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.tab.pinned {
+  max-width: 44px;
+  padding-right: 10px;
+}
+
+.tab.pinned .tab-title,
+.tab.pinned .tab-close {
+  display: none;
+}
+
+.tab-favicon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tab-favicon img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.tab-favicon .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+.tab-favicon.spin {
+  border: 1.6px solid rgb(var(--rgb-accent) / 0.3);
+  border-top-color: var(--c-accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.tab-favicon.spin img,
+.tab-favicon.spin .dot {
+  display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.94em;
+}
+
+.tab-badge {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+
+.tab-close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity var(--speed), background var(--speed);
+}
+
+.tab:hover .tab-close,
+.tab.active .tab-close {
+  opacity: 0.75;
+}
+
+.tab-close:hover {
+  opacity: 1;
+  background: rgb(var(--rgb-elevated) / 0.9);
+}
+
+.tab-close svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.tab-new {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 2px;
+}
+
+/* --- controles de ventana --- */
+
+.wincontrols {
+  display: flex;
+  align-self: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  align-self: stretch;
+  color: var(--c-muted);
+  transition: background var(--speed), color var(--speed);
+}
+
+.win-btn:hover {
+  background: rgb(var(--rgb-elevated) / 0.9);
+  color: var(--c-text);
+}
+
+.win-btn.danger:hover {
+  background: var(--c-danger);
+  color: #fff;
+}
+
+.win-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+}
+
+/* --- barra de navegacion --- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgb(var(--rgb-chrome) / var(--alpha-chrome));
+  backdrop-filter: blur(var(--blur));
+  -webkit-app-region: drag;
+}
+
+.omnibox {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 0;
+  margin: 0 6px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid rgb(var(--rgb-border) / 0.7);
+  background: rgb(var(--rgb-base) / 0.55);
+  transition: border-color var(--speed), background var(--speed);
+  -webkit-app-region: no-drag;
+}
+
+.omnibox:focus-within {
+  border-color: var(--c-accent);
+  background: rgb(var(--rgb-base) / 0.8);
+}
+
+.omnibox-scheme {
+  flex: 0 0 auto;
+  font-size: 0.82em;
+  color: var(--c-muted);
+}
+
+.omnibox-scheme.insecure {
+  color: var(--c-warn);
+}
+
+#omnibox {
+  flex: 1;
+  min-width: 0;
+}
+
+#omnibox::placeholder {
+  color: var(--c-muted);
+}
+
+.tab-stats {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  margin-right: 2px;
+  border-radius: 13px;
+  font-size: 0.82em;
+  color: var(--c-muted);
+  background: rgb(var(--rgb-base) / 0.45);
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.tab-stats b {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.tab-stats .zz {
+  color: var(--c-accent);
+}

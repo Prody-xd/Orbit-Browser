@@ -1,0 +1,18 @@
+{
+  "name": "orbit-browser",
+  "productName": "Orbit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Orbit Browser: navegador personal basado en Chromium, con control de recursos y temas translucidos",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "smoke": "node scripts/smoke.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "39.8.10"
+  }
+}

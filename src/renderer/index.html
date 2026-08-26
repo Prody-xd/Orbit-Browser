@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <!-- El chrome es codigo local: no carga scripts ni hojas remotas. Solo se
+         permite estilo en linea porque la UI escribe variables CSS al vuelo
+         para los temas, e imagenes remotas para los favicons. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self'"
+    />
+    <title>Orbit</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/chrome.css" />
+    <link rel="stylesheet" href="styles/panel.css" />
+  </head>
+  <body>
+    <div class="shell" id="shell">
+      <header class="titlebar" id="titlebar">
+        <div class="tabstrip" id="tabstrip"></div>
+        <button class="icon-btn tab-new" id="btn-new-tab" title="Nueva pestaña (Ctrl+T)"></button>
+        <div class="drag-fill"></div>
+        <div class="wincontrols">
+          <button class="win-btn" data-win="min" title="Minimizar"></button>
+          <button class="win-btn" data-win="max" title="Maximizar"></button>
+          <button class="win-btn danger" data-win="close" title="Cerrar"></button>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <button class="icon-btn" id="nav-back" title="Atrás (Alt+Izquierda)"></button>
+        <button class="icon-btn" id="nav-forward" title="Adelante (Alt+Derecha)"></button>
+        <button class="icon-btn" id="nav-reload" title="Recargar (Ctrl+R)"></button>
+
+        <div class="omnibox" id="omnibox-wrap">
+          <span class="omnibox-scheme" id="omnibox-scheme"></span>
+          <input
+            id="omnibox"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="Busca o escribe una dirección"
+          />
+        </div>
+
+        <div class="tab-stats" id="tab-stats" title="Pestañas vivas / dormidas"></div>
+        <button class="icon-btn" id="btn-sleep-others" title="Dormir las demás pestañas (F6)"></button>
+        <button class="icon-btn" id="btn-panel" title="Ajustes (Ctrl+,)"></button>
+      </div>
+
+      <main class="body">
+        <div class="page-slot" id="page-slot">
+          <div class="page-error" id="page-error" hidden></div>
+        </div>
+        <aside class="panel" id="panel" hidden>
+          <nav class="panel-tabs" id="panel-tabs"></nav>
+          <div class="panel-body" id="panel-body"></div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="resizers" id="resizers"></div>
+
+    <script type="module" src="ui/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "id": "orbit-bruma",
+  "name": "Bruma",
+  "dark": false,
+  "colors": {
+    "base": "#f2f3f7",
+    "chrome": "#ffffff",
+    "elevated": "#ffffff",
+    "text": "#26293a",
+    "muted": "#6d7488",
+    "accent": "#3b6ef5",
+    "border": "#d5d9e4",
+    "danger": "#d1435b",
+    "ok": "#2f8f4e",
+    "warn": "#b3761a",
+    "page": "#ffffff"
+  }
+}

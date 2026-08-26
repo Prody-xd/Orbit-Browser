@@ -1,0 +1,18 @@
+{
+  "id": "orbit-jade",
+  "name": "Jade",
+  "dark": true,
+  "colors": {
+    "base": "#0b1412",
+    "chrome": "#0f1d1a",
+    "elevated": "#152826",
+    "text": "#c4dcd4",
+    "muted": "#6e8b84",
+    "accent": "#4ec9a5",
+    "border": "#20342f",
+    "danger": "#e8697d",
+    "ok": "#7fd88f",
+    "warn": "#d9a95c",
+    "page": "#101a18"
+  }
+}

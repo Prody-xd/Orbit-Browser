@@ -1,0 +1,18 @@
+{
+  "id": "orbit-carbon",
+  "name": "Carbon",
+  "dark": true,
+  "colors": {
+    "base": "#08090b",
+    "chrome": "#101215",
+    "elevated": "#171a1f",
+    "text": "#d7dbe0",
+    "muted": "#7b828c",
+    "accent": "#cfd3d9",
+    "border": "#23262c",
+    "danger": "#e05561",
+    "ok": "#8cc265",
+    "warn": "#d19a66",
+    "page": "#0d0e11"
+  }
+}

@@ -1,0 +1,468 @@
+/*
+ * Panel lateral de ajustes.
+ *
+ * Se acopla en lugar de flotar: la pagina es una vista nativa que se compone
+ * por encima del HTML, asi que un panel superpuesto quedaria tapado. Al
+ * acoplarse, el hueco de la pagina se encoge y el panel siempre queda visible.
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  flex: 0 0 380px;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid rgb(var(--rgb-border) / 0.7);
+  background: rgb(var(--rgb-chrome) / var(--alpha-chrome));
+  backdrop-filter: blur(var(--blur));
+  overflow: hidden;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.panel-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 6px;
+  gap: 3px;
+  border-bottom: 1px solid rgb(var(--rgb-border) / 0.6);
+}
+
+.panel-tab {
+  flex: 1;
+  height: 28px;
+  border-radius: 7px;
+  font-size: 0.88em;
+  color: var(--c-muted);
+  transition: background var(--speed), color var(--speed);
+}
+
+.panel-tab:hover {
+  background: rgb(var(--rgb-elevated) / 0.7);
+  color: var(--c-text);
+}
+
+.panel-tab.active {
+  background: rgb(var(--rgb-accent) / 0.16);
+  color: var(--c-accent);
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px 20px;
+}
+
+.panel-body::-webkit-scrollbar {
+  width: 9px;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  background: rgb(var(--rgb-border) / 0.9);
+  border-radius: 5px;
+}
+
+.section {
+  margin-bottom: 18px;
+}
+
+.section-title {
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--c-muted);
+  margin-bottom: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 4px 0;
+}
+
+.row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-label small {
+  display: block;
+  color: var(--c-muted);
+  font-size: 0.84em;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.row-value {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-muted);
+}
+
+/*
+ * Fila con deslizador. En un panel de 380 px, meter etiqueta, valor y
+ * deslizador en una linea deja el deslizador inservible: el control pasa a su
+ * propia linea a lo ancho.
+ */
+.row.stacked {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 0 10px;
+}
+
+.row.stacked input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+/* --- controles --- */
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 21px;
+  border-radius: 11px;
+  background: rgb(var(--rgb-border) / 0.9);
+  transition: background var(--speed);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--c-muted);
+  transition: transform var(--speed), background var(--speed);
+}
+
+.switch.on {
+  background: rgb(var(--rgb-accent) / 0.35);
+}
+
+.switch.on::after {
+  transform: translateX(17px);
+  background: var(--c-accent);
+}
+
+input[type="range"] {
+  flex: 1;
+  min-width: 80px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(var(--rgb-border) / 0.9);
+  appearance: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
+
+input[type="color"] {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--rgb-border) / 0.9);
+  background: none;
+  cursor: pointer;
+  padding: 2px;
+}
+
+select,
+.text-input {
+  flex: 0 0 auto;
+  max-width: 190px;
+  height: 27px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--rgb-border) / 0.9);
+  background: rgb(var(--rgb-base) / 0.7);
+  color: var(--c-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.text-input {
+  cursor: text;
+  flex: 1;
+  max-width: none;
+}
+
+.btn {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--rgb-border) / 0.9);
+  background: rgb(var(--rgb-elevated) / 0.75);
+  color: var(--c-text);
+  font-size: 0.9em;
+  transition: background var(--speed), border-color var(--speed);
+}
+
+.btn:hover {
+  background: rgb(var(--rgb-elevated) / 1);
+  border-color: var(--c-accent);
+}
+
+.btn.primary {
+  background: rgb(var(--rgb-accent) / 0.2);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.btn.wide {
+  width: 100%;
+}
+
+/* --- perfiles de recursos --- */
+
+.profiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.profile {
+  padding: 9px 8px;
+  border-radius: 9px;
+  border: 1px solid rgb(var(--rgb-border) / 0.9);
+  background: rgb(var(--rgb-base) / 0.45);
+  text-align: center;
+  transition: border-color var(--speed), background var(--speed);
+}
+
+.profile:hover {
+  border-color: rgb(var(--rgb-accent) / 0.6);
+}
+
+.profile.active {
+  border-color: var(--c-accent);
+  background: rgb(var(--rgb-accent) / 0.14);
+}
+
+.profile b {
+  display: block;
+  font-size: 0.94em;
+  font-weight: 600;
+}
+
+.profile small {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.78em;
+  color: var(--c-muted);
+  line-height: 1.3;
+}
+
+.profile-note {
+  margin-top: 8px;
+  font-size: 0.84em;
+  color: var(--c-muted);
+  line-height: 1.4;
+}
+
+/* --- metricas --- */
+
+.gauges {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.gauge {
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgb(var(--rgb-base) / 0.45);
+  border: 1px solid rgb(var(--rgb-border) / 0.6);
+}
+
+.gauge-value {
+  font-size: 1.28em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-label {
+  font-size: 0.78em;
+  color: var(--c-muted);
+  margin-top: 1px;
+}
+
+.proc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.proc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgb(var(--rgb-base) / 0.4);
+  transition: background var(--speed);
+}
+
+.proc:hover {
+  background: rgb(var(--rgb-elevated) / 0.8);
+}
+
+.proc-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.9em;
+}
+
+.proc-mem {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.88em;
+  color: var(--c-muted);
+}
+
+.proc-bar {
+  flex: 0 0 54px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(var(--rgb-border) / 0.9);
+  overflow: hidden;
+}
+
+.proc-bar span {
+  display: block;
+  height: 100%;
+  background: var(--c-accent);
+  border-radius: 2px;
+}
+
+.proc-sleep {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--c-muted);
+  font-size: 0.8em;
+}
+
+.proc-sleep:hover {
+  background: rgb(var(--rgb-accent) / 0.2);
+  color: var(--c-accent);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  margin-bottom: 14px;
+  border-radius: 9px;
+  border: 1px solid var(--c-warn);
+  background: rgb(224 175 104 / 0.12);
+  font-size: 0.88em;
+  line-height: 1.35;
+}
+
+.banner span {
+  flex: 1;
+}
+
+.hint {
+  font-size: 0.84em;
+  color: var(--c-muted);
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 0.88em;
+}
+
+.kv span:first-child {
+  color: var(--c-muted);
+}
+
+.kv span:last-child {
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+  cursor: text;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.theme-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  border: 1px solid rgb(var(--rgb-border) / 0.9);
+  background: rgb(var(--rgb-base) / 0.45);
+  transition: border-color var(--speed);
+}
+
+.theme-card:hover {
+  border-color: rgb(var(--rgb-accent) / 0.6);
+}
+
+.theme-card.active {
+  border-color: var(--c-accent);
+}
+
+.theme-swatch {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+}
+
+.theme-card-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.9em;
+}
+
+.theme-card small {
+  font-size: 0.74em;
+  color: var(--c-muted);
+}

@@ -1,0 +1,18 @@
+{
+  "id": "orbit-noche",
+  "name": "Noche",
+  "dark": true,
+  "colors": {
+    "base": "#0f1017",
+    "chrome": "#171826",
+    "elevated": "#1f2133",
+    "text": "#c9d1e6",
+    "muted": "#79839e",
+    "accent": "#7aa2f7",
+    "border": "#2b2e42",
+    "danger": "#f7768e",
+    "ok": "#9ece6a",
+    "warn": "#e0af68",
+    "page": "#16161e"
+  }
+}
