@@ -50,7 +50,9 @@
 .tab.active {
   background: rgb(var(--rgb-base) / var(--alpha-shell));
   color: var(--c-text);
-  box-shadow: inset 0 1.5px 0 var(--c-accent);
+  box-shadow:
+    inset 0 1.5px 0 var(--c-accent),
+    0 0 calc(var(--glow-strength) * 0.5) rgb(var(--rgb-accent) / var(--glow-alpha));
 }
 
 /* Una pestana dormida no gasta un proceso. Se marca en vez de esconderlo,
@@ -219,15 +221,17 @@
   margin: 0 6px;
   padding: 0 12px;
   border-radius: 15px;
-  border: 1px solid rgb(var(--rgb-border) / 0.7);
+  border: 1px solid rgb(var(--rgb-border) / calc(0.7 + var(--glow-alpha) * 0.25));
   background: rgb(var(--rgb-base) / 0.55);
-  transition: border-color var(--speed), background var(--speed);
+  transition: border-color var(--speed), background var(--speed), box-shadow var(--speed);
+  box-shadow: 0 0 calc(var(--glow-strength) * 0.45) rgb(var(--rgb-border) / var(--glow-alpha));
   -webkit-app-region: no-drag;
 }
 
 .omnibox:focus-within {
   border-color: var(--c-accent);
   background: rgb(var(--rgb-base) / 0.8);
+  box-shadow: 0 0 var(--glow-strength) rgb(var(--rgb-accent) / var(--glow-alpha));
 }
 
 .omnibox-scheme {

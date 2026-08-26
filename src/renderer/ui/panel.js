@@ -392,10 +392,14 @@ export function createPanel({ container, tabsEl, state, onSectionChange }) {
                 on: {
                   click: async () => {
                     a.theme = theme.id;
-                    // Aplicamos el color antes de esperar al disco: cambiar de
-                    // tema tiene que sentirse instantáneo.
+                    // El acento guardado pisa el del tema. Al elegir un tema
+                    // nuevo, el acento viaja con el: si no, Neón rojo se vería
+                    // con el azul del tema anterior.
+                    if (theme.colors?.accent) a.accent = theme.colors.accent;
                     applyTheme(theme, a, state.visuals);
-                    await patchQuiet({ appearance: { theme: theme.id } });
+                    await patchQuiet({
+                      appearance: { theme: theme.id, accent: a.accent },
+                    });
                     render();
                   },
                 },

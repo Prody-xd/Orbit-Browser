@@ -194,6 +194,28 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
       JSON.stringify(applied),
     );
 
+    const neonClicked = await window.webContents.executeJavaScript(
+      `(() => {
+        const card = [...document.querySelectorAll('.theme-card')].find((el) => /ne[oó]n rojo/i.test(el.textContent));
+        if (!card) return false;
+        card.click();
+        return true;
+      })()`,
+      true,
+    );
+    await wait(700);
+    const glow = await window.webContents.executeJavaScript(
+      "document.documentElement.style.getPropertyValue('--glow-strength').trim()",
+      true,
+    );
+    check('el tema neon rojo existe y se aplica', neonClicked && glow === '18px', `glow=${glow}`);
+    await shot('07-tema-neon-rojo', window.webContents);
+    await window.webContents.executeJavaScript(
+      `([...document.querySelectorAll('.theme-card')].find((el) => /noche/i.test(el.textContent)) || document.querySelector('.theme-card'))?.click()`,
+      true,
+    );
+    await wait(400);
+
     // --- 12. la ventana es de verdad translucida ---
     if (windowMode === 'transparent') {
       const image = await withTimeout(window.webContents.capturePage(), 6000);

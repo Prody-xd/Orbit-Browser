@@ -27,6 +27,8 @@
   --blur: 20px;
   --inset: 10px;
   --font-scale: 1;
+  --glow-strength: 0px;
+  --glow-alpha: 0;
 
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --speed: 140ms;
@@ -75,11 +77,20 @@ input {
   display: flex;
   flex-direction: column;
   border-radius: var(--radius);
-  border: 1px solid rgb(var(--rgb-border) / 0.6);
+  border: 1px solid rgb(var(--rgb-border) / calc(0.55 + var(--glow-alpha) * 0.4));
   background: rgb(var(--rgb-base) / var(--alpha-shell));
   overflow: hidden;
-  /* La sombra interior da profundidad al vidrio sin costar una capa extra. */
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  /* El brillo neon es interior: en ventanas transparentes la sombra exterior
+     se recorta contra el escritorio y no se ve. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    inset 0 0 var(--glow-strength) rgb(var(--rgb-border) / var(--glow-alpha));
+}
+
+body.surface-opaque .shell {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 0 var(--glow-strength) rgb(var(--rgb-border) / var(--glow-alpha));
 }
 
 /* Maximizada: sin esquinas redondeadas ni borde, como cualquier ventana. */
@@ -120,6 +131,9 @@ body.surface-opaque {
   min-width: 0;
   border-radius: calc(var(--radius) - 4px);
   background: rgb(var(--rgb-base) / 0.35);
+  box-shadow:
+    0 0 0 1px rgb(var(--rgb-border) / calc(0.25 + var(--glow-alpha) * 0.55)),
+    0 0 var(--glow-strength) rgb(var(--rgb-border) / var(--glow-alpha));
 }
 
 .page-error {

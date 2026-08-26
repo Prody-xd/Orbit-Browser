@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { BrowserWindow, screen } = require('electron');
 
 /**
@@ -48,6 +49,9 @@ function createShellWindow({ settings, visuals }) {
 
   if (useMaterial) options.backgroundMaterial = 'acrylic';
 
+  const icon = resolveIcon();
+  if (icon) options.icon = icon;
+
   const window = new BrowserWindow(options);
   window.setMenuBarVisibility(false);
 
@@ -76,6 +80,17 @@ function sanitizeBounds(win) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(Number(value) || min, min), max);
+}
+
+/** Icono de ventana y de la barra de tareas. Ausente, Electron usa el default. */
+function resolveIcon() {
+  const icon = path.join(__dirname, '..', '..', 'build', 'icon.ico');
+  try {
+    fs.accessSync(icon);
+    return icon;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

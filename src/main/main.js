@@ -21,6 +21,12 @@ if (!app.requestSingleInstanceLock()) {
   return;
 }
 
+// Agrupa la app en la barra de tareas de Windows bajo nuestro nombre, no
+// bajo "Electron". Tiene que ir antes de crear ventanas.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.prodyxd.orbit-browser');
+}
+
 // --- Antes de whenReady: Chromium lee sus switches una sola vez, al arrancar ---
 registerSchemes();
 const earlySettings = readSettingsEarly();

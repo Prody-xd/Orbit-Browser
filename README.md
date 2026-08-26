@@ -15,10 +15,23 @@ No pretende competir con Chrome. Pretende ser *tu* navegador.
 
 ## Arrancar
 
+En desarrollo:
+
 ```bash
 npm install
 npm start
 ```
+
+Para usarlo sin comandos, genera el instalador de Windows:
+
+```bash
+npm run dist
+```
+
+El archivo queda en `dist/Orbit-Browser-Setup-0.1.0.exe`. Al instalarlo crea
+accesos directos en el escritorio y en el menú Inicio. Windows puede avisar
+que no está firmado: es normal en un proyecto personal; elige «más información»
+y ejecutar.
 
 Verificación automática (abre la app, navega, duerme pestañas, mide y guarda
 capturas en `out/smoke/`):
@@ -52,7 +65,7 @@ npm run smoke
 
 **Apariencia**
 
-- Temas en JSON, recargables sin recompilar
+- Temas en JSON, recargables sin recompilar, incluido **Neón rojo**
 - Opacidad separada para el fondo y para las barras
 - Redondeo, margen de página flotante, color de acento, escala de la interfaz
 - Ventana sin marco nativo, con barra de pestañas y controles propios
