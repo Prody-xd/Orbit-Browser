@@ -227,6 +227,18 @@ function handleCombo(combo) {
         return true;
       }
       return false;
+    case 'ctrl+u':
+      if (active != null) api.tabs.viewSource(active);
+      return true;
+    case 'ctrl+shift+i':
+      if (active != null) api.tabs.inspect(active);
+      return true;
+    case 'ctrl+p':
+      if (active != null) api.tabs.print(active);
+      return true;
+    case 'ctrl+s':
+      if (active != null) api.tabs.save(active);
+      return true;
     case 'f6':
       // Dormir el resto: el atajo para recuperar memoria de golpe.
       api.tabs.sleepOthers();

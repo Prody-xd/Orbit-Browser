@@ -91,7 +91,12 @@ app.whenReady().then(() => {
     appliedSwitches,
   });
 
-  host.restoreWindows();
+  if (SMOKE) {
+    sessionStore.data = { activeId: null, tabs: [], windows: [] };
+    host.open({ restore: false });
+  } else {
+    host.restoreWindows();
+  }
 
   // Recorrido automatizado de verificacion, solo bajo demanda.
   if (SMOKE) {

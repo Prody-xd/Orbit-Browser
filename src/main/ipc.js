@@ -3,7 +3,7 @@
 const { ipcMain, app, shell, clipboard } = require('electron');
 const settingsModule = require('./settings');
 const themes = require('./themes');
-const { showPageMenu, showTabMenu } = require('./menus');
+const { showPageMenu, showTabMenu, handlePageShortcut } = require('./menus');
 const { showNetworkPopup } = require('./network-popup');
 
 /**
@@ -86,6 +86,25 @@ function registerIpc(ctx) {
   ipcMain.handle('tabs:detach', (e, id, point) => {
     const s = shellOf(e);
     if (s) host.tearOff(s, Number(id), point);
+  });
+  ipcMain.handle('tabs:viewSource', (e, id) => {
+    const s = shellOf(e);
+    if (!s) return;
+    handlePageShortcut({ tabs: s.tabs, window: s.window, combo: 'ctrl+u' });
+  });
+  ipcMain.handle('tabs:inspect', (e, id) => {
+    const s = shellOf(e);
+    const wc = s?.tabs.tabs.get(id)?.view?.webContents;
+    wc?.openDevTools({ mode: 'detach' });
+  });
+  ipcMain.handle('tabs:print', (e, id) => {
+    const s = shellOf(e);
+    s?.tabs.tabs.get(id)?.view?.webContents.print();
+  });
+  ipcMain.handle('tabs:save', (e, id) => {
+    const s = shellOf(e);
+    if (!s) return;
+    handlePageShortcut({ tabs: s.tabs, window: s.window, combo: 'ctrl+s' });
   });
   ipcMain.on('network:menu', (e, anchor) => {
     const s = shellOf(e);
@@ -172,7 +191,10 @@ function wireShell(shell, { network }) {
   };
 
   tabs.on('update', (snapshot) => send('tabs:update', snapshot));
-  tabs.on('shortcut', (combo) => send('app:shortcut', combo));
+  tabs.on('shortcut', (combo) => {
+    if (handlePageShortcut({ tabs, window, combo })) return;
+    send('app:shortcut', combo);
+  });
   tabs.on('page-context-menu', ({ tabId, params }) => showPageMenu({ tabs, tabId, params, window }));
 
   const onNet = () => send('network:update', network ? network.snapshotFor(tabs) : { count: 0, endpoints: [] });

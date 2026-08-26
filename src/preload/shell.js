@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('orbit', {
     move: (id, index) => ipcRenderer.invoke('tabs:move', id, index),
     menu: (id) => ipcRenderer.invoke('tabs:menu', id),
     detach: (id, point) => ipcRenderer.invoke('tabs:detach', id, point),
+    viewSource: (id) => ipcRenderer.invoke('tabs:viewSource', id),
+    inspect: (id) => ipcRenderer.invoke('tabs:inspect', id),
+    print: (id) => ipcRenderer.invoke('tabs:print', id),
+    save: (id) => ipcRenderer.invoke('tabs:save', id),
     onUpdate: on('tabs:update'),
   },
 

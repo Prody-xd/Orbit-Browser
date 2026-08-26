@@ -48,11 +48,12 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host }) {
   };
 
   try {
-    await wait(1800);
+    await resetWorkspace({ tabs, host, window });
+    await wait(800);
 
     // --- 1. la cascara y la primera pestana existen ---
     const first = tabs.snapshot();
-    check('la ventana abre con una pestana', first.tabs.length >= 1, `${first.tabs.length} pestanas`);
+    check('la ventana abre con una pestana', first.tabs.length === 1, `${first.tabs.length} pestanas`);
     check('hay pestana activa', first.activeId != null, `id ${first.activeId}`);
 
     // --- 2. el layout llego desde el renderer y la vista se coloco ---
@@ -376,6 +377,18 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host }) {
     settingsModule.patchSettings({ appearance: { radius: 14 } });
     settingsModule.saveSettingsNow();
 
+    const { storeSource } = require('./source-view');
+    const sourceToken = storeSource({ url: 'https://example.com/', html: '<html><body>fuente-orbit</body></html>' });
+    const srcId = tabs.create(`orbit://source/${sourceToken}`, { active: true });
+    const srcOk = await waitFor(() => {
+      const t = tabs.tabs.get(srcId);
+      return Boolean(t && !t.loading && !t.error && /orbit:\/\/source\//.test(t.url));
+    }, 8000);
+    const srcText = srcOk
+      ? await withTimeout(tabs.tabs.get(srcId).view.webContents.executeJavaScript('document.body.innerText', true), 3000)
+      : '';
+    check('el visor de fuente muestra el documento', Boolean(srcOk && /fuente-orbit/.test(srcText || '')), String(srcText).slice(0, 80));
+
     // --- 16. arrastrar una pestana fuera abre otra ventana ---
     if (host) {
       const beforeWindows = host.list().length;
@@ -425,6 +438,22 @@ function watchConsole(window) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Cierra pestanas y ventanas de tandas anteriores y deja solo el inicio. */
+async function resetWorkspace({ tabs, host, window }) {
+  if (host) {
+    for (const extra of host.list()) {
+      if (extra.window !== window && !extra.window.isDestroyed()) extra.window.close();
+    }
+  }
+  const start = settingsModule.getSettings().browsing.startPage;
+  for (const id of [...tabs.order]) tabs.close(id);
+  tabs.create(start, { active: true });
+  await waitFor(() => {
+    const t = tabs.tabs.get(tabs.activeId);
+    return Boolean(t?.view && !t.loading && /orbit:\/\/start/i.test(t.url || ''));
+  }, 8000);
 }
 
 /** Resuelve a `null` si la promesa tarda mas de `ms`. */
