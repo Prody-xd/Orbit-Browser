@@ -4,6 +4,7 @@ import { startLayoutSync, mountResizers, mountWindowControls, enableTitlebarDoub
 import { createTabstrip } from './tabstrip.js';
 import { createToolbar } from './toolbar.js';
 import { createPanel } from './panel.js';
+import { createFindbar } from './findbar.js';
 
 /**
  * Arranque de la interfaz.
@@ -32,6 +33,7 @@ let panelOpen = false;
 let panel = null;
 let tabstrip = null;
 let toolbar = null;
+let findbar = null;
 let pushLayout = null;
 
 async function main() {
@@ -68,6 +70,10 @@ async function main() {
   });
 
   tabstrip = createTabstrip($('#tabstrip'));
+  findbar = createFindbar({
+    getActiveId: () => state.tabs.activeId,
+    onLayout: () => pushLayout?.(),
+  });
   toolbar = createToolbar({
     onOpenPanel: () => togglePanel(),
     onClosePanel: () => togglePanel(false),
@@ -87,9 +93,11 @@ async function main() {
 
   renderTabs(state.tabs);
   toolbar.renderNetwork(boot.network ?? { count: 0 });
+  toolbar.renderDownloads(boot.downloads ?? { busy: false, percent: 0, items: [] });
 
   api.tabs.onUpdate((snapshot) => renderTabs(snapshot));
   api.network.onUpdate((snapshot) => toolbar.renderNetwork(snapshot));
+  api.downloads.onUpdate((snapshot) => toolbar.renderDownloads(snapshot));
   api.window.onState((windowState) => {
     applyWindowState(windowState);
     // El redondeo cambia al maximizar, y con el el rectangulo de la pagina.
@@ -105,10 +113,12 @@ async function main() {
 }
 
 function renderTabs(snapshot) {
+  const prevActive = state.tabs.activeId;
   state.tabs = snapshot;
   tabstrip.render(snapshot);
   toolbar.render(snapshot);
   panel.setTabs();
+  if (findbar && prevActive !== snapshot.activeId) findbar.onTabChange(snapshot.activeId);
 }
 
 // ------------------------------------------------------------------ panel
@@ -171,7 +181,7 @@ function onKeyDown(event) {
   const combo = comboOf(event);
   if (!combo) return;
   // En la barra de direcciones, Enter y Escape los gestiona la propia barra.
-  if (event.target.tagName === 'INPUT' && !combo.startsWith('ctrl') && !combo.startsWith('alt')) return;
+  if (event.target.tagName === 'INPUT' && !combo.startsWith('ctrl') && !combo.startsWith('alt') && combo !== 'escape' && combo !== 'f3' && combo !== 'shift+f3') return;
   if (handleCombo(combo)) event.preventDefault();
 }
 
@@ -199,6 +209,17 @@ function handleCombo(combo) {
     case 'ctrl+l':
       toolbar.focusOmnibox();
       return true;
+    case 'ctrl+f':
+      findbar?.open();
+      return true;
+    case 'f3':
+    case 'ctrl+g':
+      findbar?.next();
+      return true;
+    case 'shift+f3':
+    case 'ctrl+shift+g':
+      findbar?.prev();
+      return true;
     case 'ctrl+r':
     case 'f5':
       if (active != null) api.tabs.reload(active);
@@ -222,6 +243,10 @@ function handleCombo(combo) {
       requestPanelToggle();
       return true;
     case 'escape':
+      if (findbar?.isOpen()) {
+        findbar.close();
+        return true;
+      }
       if (panelOpen) {
         togglePanel(false);
         return true;

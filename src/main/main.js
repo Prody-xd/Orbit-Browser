@@ -15,6 +15,8 @@ const { NetworkActivity } = require('./network');
 const { JsonStore } = require('./store');
 const { registerIpc, wireShell } = require('./ipc');
 const { createHost } = require('./host');
+const { initForms, getForms } = require('./forms');
+const { initDownloads, getDownloads } = require('./downloads');
 
 const SMOKE = process.env.VITRAL_SMOKE === '1';
 if (SMOKE) {
@@ -67,6 +69,10 @@ app.whenReady().then(() => {
   blocker.onRequest = (details) => network.observe(details);
   blocker.install();
 
+  const forms = initForms();
+  const downloads = initDownloads();
+  downloads.install(session.fromPartition(PARTITION));
+
   const metrics = new MetricsSampler({
     getTabs: () => host?.focused()?.tabs ?? null,
     getSettings,
@@ -79,7 +85,7 @@ app.whenReady().then(() => {
     sessionStore,
     saveSettingsNow,
     restoreSession,
-    onShell: (shell) => wireShell(shell, { network }),
+    onShell: (shell) => wireShell(shell, { network, downloads }),
   });
 
   registerIpc({
@@ -87,6 +93,7 @@ app.whenReady().then(() => {
     metrics,
     blocker,
     network,
+    downloads,
     visuals,
     appliedSwitches,
   });
@@ -113,6 +120,8 @@ app.whenReady().then(() => {
             blocker,
             windowMode: first.windowMode,
             host,
+            downloads,
+            forms,
           })
           .catch((err) => {
             console.error('[smoke] error:', err);
@@ -179,6 +188,12 @@ function restoreSession(tabs) {
 }
 
 // Un navegador personal no tiene sentido sin ventana: al cerrarla, se cierra.
+app.on('before-quit', () => {
+  saveSettingsNow();
+  getForms()?.saveNow();
+  getDownloads()?.saveNow();
+});
+
 app.on('window-all-closed', () => app.quit());
 
 process.on('uncaughtException', (err) => {

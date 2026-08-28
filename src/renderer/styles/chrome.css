@@ -654,6 +654,125 @@ body.tearing-tab {
   text-align: right;
 }
 
+.dl-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  margin-right: 2px;
+  border-radius: 13px;
+  font-size: 0.82em;
+  color: var(--c-muted);
+  background: rgb(var(--rgb-base) / 0.45);
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.dl-btn:hover {
+  background: rgb(var(--rgb-elevated) / 0.85);
+  color: var(--c-text);
+}
+
+.dl-btn.is-busy {
+  color: var(--c-accent);
+}
+
+.dl-btn .dl-icon {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.dl-btn .dl-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dl-btn b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.2em;
+}
+
+.dl-btn:not(.is-busy) b {
+  display: none;
+}
+
+.dl-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 99px;
+  background: rgb(var(--rgb-border) / 0.45);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dl-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--c-accent);
+}
+
 .tab-stats .zz {
   color: var(--c-accent);
+}
+
+.findbar {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 8px;
+  background: rgb(var(--rgb-chrome) / var(--alpha-chrome));
+  backdrop-filter: blur(var(--blur));
+  -webkit-app-region: no-drag;
+}
+
+.findbar.is-open,
+.findbar:not([hidden]) {
+  display: flex;
+}
+
+.findbar[hidden] {
+  display: none;
+}
+
+#find-input {
+  flex: 0 1 260px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgb(var(--rgb-elevated) / 0.7);
+  box-shadow: inset 0 0 0 1px rgb(var(--rgb-border) / 0.55);
+  color: var(--c-text);
+}
+
+#find-input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--c-accent);
+}
+
+.findbar.not-found #find-input {
+  box-shadow: inset 0 0 0 1.5px var(--c-danger);
+}
+
+.find-count {
+  min-width: 6.5em;
+  color: var(--c-muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.findbar.not-found .find-count {
+  color: var(--c-danger);
 }

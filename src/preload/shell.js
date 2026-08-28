@@ -40,10 +40,23 @@ contextBridge.exposeInMainWorld('orbit', {
     onUpdate: on('tabs:update'),
   },
 
+  find: {
+    start: (id, text, opts) => ipcRenderer.invoke('find:start', id, text, opts),
+    stop: (id) => ipcRenderer.invoke('find:stop', id),
+    setVisible: (visible) => ipcRenderer.send('find:visible', visible),
+    onResult: on('find:result'),
+  },
+
   network: {
     snapshot: () => ipcRenderer.invoke('network:snapshot'),
     menu: (anchor) => ipcRenderer.send('network:menu', anchor),
     onUpdate: on('network:update'),
+  },
+
+  downloads: {
+    snapshot: () => ipcRenderer.invoke('downloads:snapshot'),
+    menu: (anchor) => ipcRenderer.send('downloads:menu', anchor),
+    onUpdate: on('downloads:update'),
   },
 
   layout: {

@@ -655,6 +655,11 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
               toggle(b.restoreAsleep, (value) => patchAndRender({ browsing: { restoreAsleep: value } })),
             )
           : null,
+        row(
+          'Recordar lo escrito en formularios',
+          'Sugiere usuarios y correos al volver. El resto de campos, si entras más de 3 veces y escribes lo mismo. Nunca contraseñas.',
+          toggle(b.rememberForms !== false, (value) => patchAndRender({ browsing: { rememberForms: value } })),
+        ),
       ]),
     );
 

@@ -19,6 +19,10 @@ export function createToolbar({ onOpenPanel, onClosePanel }) {
   const netBtn = $('#btn-network');
   const netIcon = $('#net-icon');
   const netCount = $('#net-count');
+  const dlBtn = $('#btn-downloads');
+  const dlIcon = $('#dl-icon');
+  const dlLabel = $('#dl-label');
+  const dlBar = $('#dl-bar');
   const sleepOthers = $('#btn-sleep-others');
   const panelButton = $('#btn-panel');
   const panelClose = $('#btn-panel-close');
@@ -33,6 +37,7 @@ export function createToolbar({ onOpenPanel, onClosePanel }) {
   if (panelClose) panelClose.innerHTML = icons.close;
   newTab.innerHTML = icons.plus;
   if (netIcon) netIcon.innerHTML = icons.fetch;
+  if (dlIcon) dlIcon.innerHTML = icons.download;
 
   let active = null;
   let editing = false;
@@ -51,6 +56,12 @@ export function createToolbar({ onOpenPanel, onClosePanel }) {
     event.stopImmediatePropagation();
     const box = netBtn.getBoundingClientRect();
     window.orbit.network.menu({ x: box.right, y: box.bottom + 6 });
+  });
+  dlBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const box = dlBtn.getBoundingClientRect();
+    window.orbit.downloads.menu({ x: box.right, y: box.bottom + 6 });
   });
   panelButton.addEventListener('click', (event) => {
     event.preventDefault();
@@ -148,7 +159,24 @@ export function createToolbar({ onOpenPanel, onClosePanel }) {
         : `${count} ${count === 1 ? 'solicitud fetch' : 'solicitudes fetch'} · clic para ver endpoints`;
   }
 
-  return { render, renderNetwork, focusOmnibox: () => omnibox.focus(), getActive: () => active };
+  function renderDownloads(snapshot) {
+    if (!dlBtn) return;
+    const busy = Boolean(snapshot?.busy);
+    const percent = Number(snapshot?.percent) || 0;
+    const active = Number(snapshot?.active) || 0;
+    dlBtn.classList.toggle('is-busy', busy);
+    if (dlLabel) dlLabel.textContent = busy ? `${percent}%` : '';
+    if (dlBar) {
+      dlBar.hidden = !busy;
+      const fill = dlBar.firstElementChild;
+      if (fill) fill.style.width = `${percent}%`;
+    }
+    dlBtn.title = busy
+      ? `${active} ${active === 1 ? 'descarga' : 'descargas'} · ${percent}%`
+      : 'Descargas';
+  }
+
+  return { render, renderNetwork, renderDownloads, focusOmnibox: () => omnibox.focus(), getActive: () => active };
 }
 
 function formatNetCount(n) {

@@ -4,6 +4,8 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { WebContentsView, shell } = require('electron');
 const { attachWindowOpen } = require('./popups');
+const { createTabDialogs, attachPageDialogs } = require('./js-dialogs');
+const { getForms, pageKey } = require('./forms');
 
 const PARTITION = 'persist:orbit';
 const PAGE_BACKGROUND = '#16161e';
@@ -38,6 +40,8 @@ class TabManager extends EventEmitter {
     this.borderRadius = 0;
     this._ignorePageMouse = false;
     this._boundsReady = false;
+    this.findBarOpen = false;
+    this.jsDialogs = createTabDialogs(this);
 
     this._sweepTimer = setInterval(() => this._sweepIdle(), 15_000);
     if (typeof this._sweepTimer.unref === 'function') this._sweepTimer.unref();
@@ -151,6 +155,7 @@ class TabManager extends EventEmitter {
     }
 
     this._emit();
+    this.jsDialogs.sync();
     return tab;
   }
 
@@ -191,6 +196,8 @@ class TabManager extends EventEmitter {
     this._enforceLiveLimit();
     this.emit('activated', tab.id);
     this._emit();
+    this.jsDialogs.raise();
+    this.jsDialogs.sync();
     return tab.id;
   }
 
@@ -215,6 +222,8 @@ class TabManager extends EventEmitter {
     this._enforceLiveLimit();
     this.emit('activated', id);
     this._emit();
+    this.jsDialogs.raise();
+    this.jsDialogs.sync();
   }
 
   // -------------------------------------------------------------- suspension
@@ -382,6 +391,38 @@ class TabManager extends EventEmitter {
       this._setViewVisible(active.view, true);
       this._applyBounds(active);
     }
+    this.jsDialogs.layout();
+  }
+
+  /** Busca texto en la pestana con el resaltado nativo de Chromium. */
+  findInPage(id, text, opts = {}) {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    if (!tab.view) this.wake(id, { activating: id === this.activeId });
+    const wc = tab.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    const query = String(text ?? '');
+    if (!query) {
+      this.stopFind(id);
+      return;
+    }
+    // En Electron `findNext` se mapea a Blink `new_session`, no al
+    // `find_next` de Chromium: true = busqueda nueva, false = siguiente.
+    wc.findInPage(query, {
+      forward: opts.forward !== false,
+      findNext: !opts.findNext,
+      matchCase: Boolean(opts.matchCase),
+    });
+  }
+
+  stopFind(id) {
+    const wc = this.tabs.get(id)?.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    try {
+      wc.stopFindInPage('clearSelection');
+    } catch {
+      /* ya cerrada */
+    }
   }
 
   // ---------------------------------------------------------------- snapshot
@@ -426,6 +467,7 @@ class TabManager extends EventEmitter {
 
   dispose() {
     clearInterval(this._sweepTimer);
+    this.jsDialogs.dispose();
     for (const tab of this.tabs.values()) this._destroyView(tab);
     this.tabs.clear();
     this.order = [];
@@ -460,12 +502,14 @@ class TabManager extends EventEmitter {
     this._setViewVisible(view, false);
     this._applyBounds(tab);
     this._wire(tab);
+    this.jsDialogs.raise();
     if (tab.muted) view.webContents.setAudioMuted(true);
 
     view.webContents.loadURL(tab.url).catch(() => {});
   }
 
   _destroyView(tab) {
+    this.jsDialogs.dismiss(tab);
     const view = tab.view;
     if (!view) return;
     tab.view = null;
@@ -529,6 +573,7 @@ class TabManager extends EventEmitter {
       const mgr = owner();
       tab.url = url;
       tab.error = null;
+      noteFormVisit(tab, url);
       mgr?.emit('main-navigate', tab.id);
       touch();
     });
@@ -536,6 +581,7 @@ class TabManager extends EventEmitter {
     wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
       if (isMainFrame) {
         tab.url = url;
+        noteFormVisit(tab, url);
         touch();
       }
     });
@@ -571,6 +617,12 @@ class TabManager extends EventEmitter {
       mgr?._emit();
     });
 
+    wc.on('found-in-page', (_e, result) => {
+      owner()?.emit('find-result', { tabId: tab.id, result });
+    });
+
+    attachPageDialogs(wc, tab);
+
     attachWindowOpen(wc, {
       getParentWindow: () => owner()?.window ?? null,
       openTab: (url, opts) => owner()?.create(url, opts),
@@ -587,6 +639,12 @@ class TabManager extends EventEmitter {
       const mgr = owner();
       if (!mgr || input.type !== 'keyDown') return;
       const combo = comboOf(input);
+      if (combo === 'escape' && mgr.findBarOpen) {
+        event.preventDefault();
+        if (input.isAutoRepeat) return;
+        mgr.emit('shortcut', combo);
+        return;
+      }
       if (!combo || !SHORTCUTS.has(combo)) return;
       event.preventDefault();
       // Ctrl+, y Escape basculan: el auto-repeat los dejaria abriendo y
@@ -674,6 +732,11 @@ const SHORTCUTS = new Set([
   'ctrl+,',
   'alt+left',
   'alt+right',
+  'ctrl+f',
+  'ctrl+g',
+  'ctrl+shift+g',
+  'f3',
+  'shift+f3',
   'ctrl+s',
   'ctrl+p',
   'ctrl+u',
@@ -695,6 +758,17 @@ function comboOf(input) {
   // Orden fijo: ctrl+alt+shift+tecla, para poder comparar cadenas.
   const order = { ctrl: 0, alt: 1, shift: 2 };
   return parts.sort((a, b) => (order[a] ?? 9) - (order[b] ?? 9)).join('+');
+}
+
+function noteFormVisit(tab, url) {
+  const key = pageKey(url);
+  if (!key || tab._formPageKey === key) return;
+  tab._formPageKey = key;
+  try {
+    getForms()?.noteVisit(url);
+  } catch {
+    /* settings aun no listos */
+  }
 }
 
 function hostOf(url) {

@@ -77,6 +77,7 @@ function showPageMenu({ tabs, tabId, params, window }) {
       click: () => tabs.goForward(tabId),
     },
     { label: 'Recargar', accelerator: 'CommandOrControl+R', click: () => tabs.reload(tabId) },
+    { label: 'Buscar...', accelerator: 'CommandOrControl+F', click: () => window.webContents.send('app:shortcut', 'ctrl+f') },
     { type: 'separator' },
     { label: 'Copiar dirección de la página', click: () => clipboard.writeText(pageUrl) },
     { type: 'separator' },

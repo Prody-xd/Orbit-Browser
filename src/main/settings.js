@@ -78,6 +78,8 @@ const DEFAULTS = {
     restoreSession: true,
     /** Pestanas restauradas arrancan dormidas: inicio instantaneo. */
     restoreAsleep: true,
+    /** Recordar texto de formularios en paginas visitadas a menudo. */
+    rememberForms: true,
   },
 };
 

@@ -50,9 +50,22 @@
           <span class="net-icon" id="net-icon"></span>
           <b id="net-count">0</b>
         </button>
+        <button class="dl-btn" id="btn-downloads" title="Descargas">
+          <span class="dl-icon" id="dl-icon"></span>
+          <b id="dl-label"></b>
+          <i class="dl-bar" id="dl-bar" hidden><i></i></i>
+        </button>
         <div class="tab-stats" id="tab-stats" title="Pestañas vivas / dormidas"></div>
         <button class="icon-btn" id="btn-sleep-others" title="Dormir las demás pestañas (F6)"></button>
         <button class="icon-btn" id="btn-panel" title="Abrir o cerrar ajustes (Ctrl+,)"></button>
+      </div>
+
+      <div class="findbar" id="findbar" hidden>
+        <input id="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Buscar en la página" />
+        <span class="find-count" id="find-count"></span>
+        <button class="icon-btn" id="find-prev" title="Anterior (Mayús+Enter)"></button>
+        <button class="icon-btn" id="find-next" title="Siguiente (Enter)"></button>
+        <button class="icon-btn" id="find-close" title="Cerrar (Esc)"></button>
       </div>
 
       <div class="workspace" id="workspace">

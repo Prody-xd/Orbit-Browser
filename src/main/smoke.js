@@ -17,7 +17,7 @@ const settingsModule = require('./settings');
  *
  * Uso: `npm run smoke`
  */
-async function runSmoke({ window, tabs, metrics, blocker, windowMode, host }) {
+async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, downloads, forms }) {
   const outDir = path.join(app.getAppPath(), 'out', 'smoke');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -78,6 +78,127 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host }) {
       ? await withTimeout(activeTab.view.webContents.executeJavaScript('document.title', true), 3000)
       : null;
     check('la pagina de inicio ejecuta su script', startTitle === 'Orbit', String(startTitle));
+
+    // El atajo real llega por IPC (foco en la pagina o en el chrome). El
+    // KeyboardEvent sintetico no basta: Chromium no lo trata como Ctrl+F.
+    window.webContents.send('app:shortcut', 'ctrl+f');
+    await wait(250);
+    const findOpened = await window.webContents.executeJavaScript(
+      "Boolean(document.getElementById('findbar') && !document.getElementById('findbar').hidden)",
+      true,
+    );
+    check('Ctrl+F abre la barra de busqueda', findOpened);
+    await window.webContents.executeJavaScript(
+      `(() => {
+        const input = document.getElementById('find-input');
+        if (!input) return;
+        input.focus();
+        input.value = 'Orbit';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`,
+      true,
+    );
+    let findCount = '';
+    const foundDeadline = Date.now() + 4000;
+    let found = false;
+    while (Date.now() < foundDeadline) {
+      findCount = (await withTimeout(
+        window.webContents.executeJavaScript("document.getElementById('find-count')?.textContent || ''", true),
+        800,
+      )) || '';
+      if (findCount && findCount !== 'Sin resultados' && /\d/.test(findCount)) {
+        found = true;
+        break;
+      }
+      await wait(150);
+    }
+    check('buscar en la pagina encuentra coincidencias', found, String(findCount));
+    window.webContents.send('app:shortcut', 'escape');
+    await wait(200);
+    const findClosed = await withTimeout(
+      window.webContents.executeJavaScript("Boolean(document.getElementById('findbar')?.hidden)", true),
+      800,
+    );
+    check('Esc cierra la barra de busqueda', findClosed === true);
+
+    const alertPage = tabs.tabs.get(tabs.activeId)?.view?.webContents;
+    const alertDone = alertPage
+      ? alertPage.executeJavaScript('alert("hola-orbit"); "done"', true)
+      : Promise.resolve(null);
+    const alertOpened = await waitFor(() => tabs.jsDialogs?.isOpen?.(), 5000);
+    check('alert abre el dialogo de Orbit', alertOpened);
+    let alertText = '';
+    if (alertOpened && tabs.jsDialogs.overlayContents) {
+      alertText = (await withTimeout(
+        tabs.jsDialogs.overlayContents.executeJavaScript(
+          `JSON.stringify({
+            title: document.getElementById('title')?.textContent || '',
+            message: document.getElementById('message')?.textContent || '',
+          })`,
+          true,
+        ),
+        2000,
+      )) || '';
+      await shot('02b-alert', tabs.jsDialogs.overlayContents);
+      await tabs.jsDialogs.overlayContents.executeJavaScript("document.getElementById('btn-ok')?.click()", true);
+    }
+    check('el dialogo muestra el mensaje del alert', /hola-orbit/.test(alertText), String(alertText));
+    const alertClosed = await withTimeout(alertDone, 4000);
+    check('aceptar cierra el alert y el script sigue', alertClosed === 'done' && !tabs.jsDialogs.isOpen(), String(alertClosed));
+
+    const formStamp = Date.now();
+    const formUrl = `https://forms.example/login-${formStamp}`;
+    if (forms) {
+      for (let i = 0; i < 4; i++) forms.noteVisit(formUrl);
+      forms.record({ url: formUrl, field: 'email', value: 'yo@orbit.local' });
+      forms.record({ url: formUrl, field: 'email', value: 'yo@orbit.local' });
+      const hints = forms.suggest({ url: formUrl, field: 'email', prefix: 'yo' });
+      check(
+        'sugiere el texto repetido tras 4 visitas',
+        Array.isArray(hints) && hints.some((h) => h.value === 'yo@orbit.local'),
+        JSON.stringify(hints),
+      );
+      const fewUrl = `https://forms.example/once-${formStamp}`;
+      forms.noteVisit(fewUrl);
+      forms.noteVisit(fewUrl);
+      forms.noteVisit(fewUrl);
+      forms.record({ url: fewUrl, field: 'q', value: 'hola' });
+      forms.record({ url: fewUrl, field: 'q', value: 'hola' });
+      check('no sugiere con 3 visitas o menos', forms.suggest({ url: fewUrl, field: 'q', prefix: '' }).length === 0);
+      forms.record({ url: formUrl, field: 'password', value: 'secreto123' });
+      check(
+        'no recuerda contrasenas',
+        !forms.suggest({ url: formUrl, field: 'password', prefix: '', kind: 'password' }).some((h) => /secreto/.test(h.value)),
+      );
+      const userUrl = `https://forms.example/signin-${formStamp}`;
+      forms.noteVisit(userUrl);
+      forms.record({ url: userUrl, field: 'username', value: 'prody', kind: 'username' });
+      check(
+        'sugiere el usuario desde la primera vez',
+        forms.suggest({ url: userUrl, field: 'username', prefix: '', kind: 'username' }).some((h) => h.value === 'prody'),
+      );
+    }
+
+    const hasDlBtn = await window.webContents.executeJavaScript(
+      "Boolean(document.getElementById('btn-downloads'))",
+      true,
+    );
+    check('hay boton de descargas', hasDlBtn);
+
+    if (downloads && alertPage) {
+      try {
+        alertPage.downloadURL(`data:text/plain,${encodeURIComponent('hola-orbit-dl')}`);
+      } catch (err) {
+        log(`downloadURL fallo: ${err.message}`);
+      }
+      const dlSeen = await waitFor(() => (downloads.snapshot().items || []).length > 0 || downloads.snapshot().busy, 8000);
+      const dlSnap = downloads.snapshot();
+      check(
+        'una descarga aparece en el panel',
+        dlSeen && (dlSnap.busy || dlSnap.items.length > 0),
+        `${dlSnap.items.length} items · ${dlSnap.items[0]?.filename || ''} · ${dlSnap.items[0]?.state || ''} · ${dlSnap.percent}%`,
+      );
+    }
 
     const themeCss = activeTab?.view
       ? await withTimeout(

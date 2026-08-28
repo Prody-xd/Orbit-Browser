@@ -1,6 +1,7 @@
 'use strict';
 
 const { shell } = require('electron');
+const { attachWindowDialogs } = require('./js-dialogs');
 
 /**
  * Ventanas que abre una pagina (`window.open`, OAuth, etc.).
@@ -109,6 +110,7 @@ function attachWindowOpen(wc, hooks = {}) {
       getParentWindow: () => child,
       openTab,
     });
+    attachWindowDialogs(child);
     childWc.on('will-navigate', (event, nextUrl) => {
       if (!/^(https?|orbit|about|file|data|blob):/i.test(nextUrl)) {
         event.preventDefault();

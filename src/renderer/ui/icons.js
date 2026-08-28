@@ -24,4 +24,7 @@ export const icons = {
   max: svg('<rect x="1" y="1" width="8" height="8" rx="1"/>', 10),
   restore: svg('<rect x="1" y="3" width="6" height="6" rx="1"/><path d="M3 3V1.5h5.5V7"/>', 10),
   winclose: svg('<path d="M1 1l8 8M9 1l-8 8"/>', 10),
+  findPrev: svg('<path d="M3.5 10 8 5.5 12.5 10"/>'),
+  findNext: svg('<path d="M3.5 6 8 10.5 12.5 6"/>'),
+  download: svg('<path d="M8 2.5v8"/><path d="M5 8.5 8 11.5 11 8.5"/><path d="M3.5 13.5h9"/>'),
 };

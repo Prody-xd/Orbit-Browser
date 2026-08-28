@@ -5,6 +5,7 @@ const settingsModule = require('./settings');
 const themes = require('./themes');
 const { showPageMenu, showTabMenu, handlePageShortcut } = require('./menus');
 const { showNetworkPopup } = require('./network-popup');
+const { showDownloadsPopup } = require('./downloads-popup');
 
 /**
  * Puente entre la UI y el proceso principal.
@@ -16,7 +17,7 @@ const { showNetworkPopup } = require('./network-popup');
  * que lo mando: asi pueden convivir varias cascaras.
  */
 function registerIpc(ctx) {
-  const { host, metrics, blocker, network, visuals, appliedSwitches } = ctx;
+  const { host, metrics, blocker, network, downloads, visuals, appliedSwitches } = ctx;
 
   const shellOf = (event) => host.fromSender(event.sender);
 
@@ -51,6 +52,7 @@ function registerIpc(ctx) {
       appliedSwitches,
       tabs: tabs.snapshot(),
       network: network ? network.snapshotFor(tabs) : { count: 0, endpoints: [] },
+      downloads: downloads ? downloads.snapshot() : { busy: false, active: 0, percent: 0, items: [] },
       windowState: { maximized: window.isMaximized(), fullscreen: window.isFullScreen(), focused: window.isFocused() },
       versions: {
         app: app.getVersion(),
@@ -115,9 +117,26 @@ function registerIpc(ctx) {
     return s && network ? network.snapshotFor(s.tabs) : { count: 0, endpoints: [] };
   });
 
+  const { getForms } = require('./forms');
+  ipcMain.handle('form:suggest', (_e, payload) => getForms()?.suggest(payload) ?? []);
+  ipcMain.on('form:record', (_e, payload) => getForms()?.record(payload));
+
+  ipcMain.on('downloads:menu', (e, anchor) => {
+    const s = shellOf(e);
+    if (s) showDownloadsPopup({ downloads, parent: s.window, anchor });
+  });
+  ipcMain.handle('downloads:snapshot', () => downloads?.snapshot() ?? { busy: false, active: 0, percent: 0, items: [] });
+
   // --- layout: la UI mide el hueco de la pagina y el main coloca la vista ---
   ipcMain.on('layout:pageBounds', (e, bounds, radius) => shellOf(e)?.tabs.setPageBounds(bounds, radius));
   ipcMain.on('layout:ignorePageMouse', (e, ignore) => shellOf(e)?.tabs.setPageIgnoreMouse(Boolean(ignore)));
+
+  ipcMain.handle('find:start', (e, id, text, opts) => shellOf(e)?.tabs.findInPage(id, text, opts));
+  ipcMain.handle('find:stop', (e, id) => shellOf(e)?.tabs.stopFind(id));
+  ipcMain.on('find:visible', (e, visible) => {
+    const s = shellOf(e);
+    if (s) s.tabs.findBarOpen = Boolean(visible);
+  });
 
   // --- ajustes ---
   ipcMain.handle('settings:patch', (_e, patch) => {
@@ -184,7 +203,7 @@ function registerIpc(ctx) {
 }
 
 /** Empuja estado de una cascara concreta hacia su renderer. */
-function wireShell(shell, { network }) {
+function wireShell(shell, { network, downloads }) {
   const { window, tabs } = shell;
   const send = (channel, payload) => {
     if (!window.isDestroyed()) window.webContents.send(channel, payload);
@@ -196,9 +215,12 @@ function wireShell(shell, { network }) {
     send('app:shortcut', combo);
   });
   tabs.on('page-context-menu', ({ tabId, params }) => showPageMenu({ tabs, tabId, params, window }));
+  tabs.on('find-result', (payload) => send('find:result', payload));
 
   const onNet = () => send('network:update', network ? network.snapshotFor(tabs) : { count: 0, endpoints: [] });
   if (network) network.on('update', onNet);
+  const onDl = (snap) => send('downloads:update', snap ?? downloads?.snapshot());
+  if (downloads) downloads.on('update', onDl);
 
   const pushWindowState = () => {
     if (window.isDestroyed()) return;
@@ -214,6 +236,7 @@ function wireShell(shell, { network }) {
 
   window.on('closed', () => {
     if (network) network.off('update', onNet);
+    if (downloads) downloads.off('update', onDl);
   });
 }
 
