@@ -144,6 +144,24 @@
   width: 100%;
 }
 
+.search-picker {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.search-picker select,
+.search-picker .text-input {
+  max-width: none;
+  width: 100%;
+}
+
+.search-picker .btn {
+  align-self: start;
+}
+
 /* --- controles --- */
 
 .switch {

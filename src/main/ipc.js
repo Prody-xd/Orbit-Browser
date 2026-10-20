@@ -28,9 +28,10 @@ function registerIpc(ctx) {
   };
 
   metrics.onSample = () => {
+    const managers = host.tabManagers();
     for (const s of host.list()) {
       if (s.window.isDestroyed()) continue;
-      s.window.webContents.send('metrics:sample', metrics.sample(s.tabs));
+      s.window.webContents.send('metrics:sample', metrics.sample(managers));
     }
   };
 
@@ -71,8 +72,9 @@ function registerIpc(ctx) {
   ipcMain.handle('tabs:close', (e, id) => shellOf(e)?.tabs.close(id));
   ipcMain.handle('tabs:activate', (e, id) => shellOf(e)?.tabs.activate(id));
   ipcMain.handle('tabs:sleep', (e, id) => shellOf(e)?.tabs.sleep(id));
+  ipcMain.handle('tabs:sleepPid', (_e, pid) => host.sleepTabByPid(pid));
   ipcMain.handle('tabs:wake', (e, id) => shellOf(e)?.tabs.wake(id));
-  ipcMain.handle('tabs:sleepOthers', (e) => shellOf(e)?.tabs.sleepAllButActive());
+  ipcMain.handle('tabs:sleepOthers', (e) => host.sleepOthersExcept(shellOf(e)));
   ipcMain.handle('tabs:navigate', (e, id, url) => shellOf(e)?.tabs.navigate(id, url));
   ipcMain.handle('tabs:reload', (e, id, opts) => shellOf(e)?.tabs.reload(id, opts));
   ipcMain.handle('tabs:stop', (e, id) => shellOf(e)?.tabs.stop(id));
@@ -143,8 +145,12 @@ function registerIpc(ctx) {
     const result = settingsModule.patchSettings(patch ?? {});
     if (patch?.resources?.metricsIntervalMs !== undefined) metrics.refreshInterval();
     if (patch?.resources?.maxLiveTabs !== undefined) {
-      for (const s of host.list()) s.tabs.enforceLimits();
+      host.enforceLiveLimits();
     }
+    if (patch?.appearance) {
+      for (const s of host.list()) s.tabs.refreshPageCanvases();
+    }
+    if (patch?.browsing) settingsModule.saveSettingsNow();
     broadcast('settings:changed', result.settings);
     return result;
   });
@@ -152,7 +158,7 @@ function registerIpc(ctx) {
   ipcMain.handle('settings:profile', (_e, name) => {
     const result = settingsModule.applyProfile(name);
     metrics.refreshInterval();
-    for (const s of host.list()) s.tabs.enforceLimits();
+    host.enforceLiveLimits();
     broadcast('settings:changed', result.settings);
     return result;
   });
@@ -163,16 +169,12 @@ function registerIpc(ctx) {
   ipcMain.handle('themes:openFolder', () => themes.openThemesFolder());
 
   // --- recursos ---
-  ipcMain.handle('metrics:subscribe', (e) => {
-    const s = shellOf(e);
-    const first = metrics.subscribe();
-    return s ? metrics.sample(s.tabs) : first;
+  ipcMain.handle('metrics:subscribe', () => {
+    metrics.subscribe();
+    return metrics.sample(host.tabManagers());
   });
   ipcMain.handle('metrics:unsubscribe', () => metrics.unsubscribe());
-  ipcMain.handle('metrics:sample', (e) => {
-    const s = shellOf(e);
-    return s ? metrics.sample(s.tabs) : metrics.sample();
-  });
+  ipcMain.handle('metrics:sample', () => metrics.sample(host.tabManagers()));
   ipcMain.handle('blocker:stats', () => blocker.stats());
   ipcMain.handle('blocker:reload', () => {
     blocker.loadUserLists();

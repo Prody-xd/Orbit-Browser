@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, session } = require('electron');
+const { rewriteGoogleAuthUrl } = require('./chrome-compat');
 
 /**
  * Bloqueo de rastreadores por host exacto o sufijo de dominio.
@@ -100,6 +101,10 @@ class TrackerBlocker {
     const ses = session.fromPartition(this.partition);
     ses.webRequest.onBeforeRequest((details, callback) => {
       this.onRequest?.(details);
+      // Mismo listener: Electron solo admite uno por evento. GlifWebSignIn
+      // dispara Botguard; WebLiteSignIn es el flujo que Google usa en apps.
+      const rewritten = rewriteGoogleAuthUrl(details.url);
+      if (rewritten) return callback({ redirectURL: rewritten });
       if (!this.getSettings().browsing.blockTrackers) return callback({});
       // Nunca bloqueamos el documento principal: si te equivocas en una regla,
       // no quieres que una pagina entera deje de cargar.

@@ -57,6 +57,21 @@ function tickClock() {
   });
 }
 
+document.getElementById('search').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const query = document.getElementById('q').value.trim();
+  if (!query) return;
+  let template = 'https://duckduckgo.com/?q=%s';
+  try {
+    const prefs = await fetch('orbit://prefs/').then((res) => res.json());
+    if (prefs?.searchTemplate) template = String(prefs.searchTemplate);
+  } catch {
+    /* si prefs no carga, DuckDuckGo sigue siendo un buscador usable */
+  }
+  if (!template.includes('%s')) template = `${template}${template.includes('?') ? '&' : '?'}q=%s`;
+  window.location.href = template.replace('%s', encodeURIComponent(query));
+});
+
 renderLinks();
 tickClock();
 // Un minuto es suficiente para un reloj sin segundos, y no despierta la CPU

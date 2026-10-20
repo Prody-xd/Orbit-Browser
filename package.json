@@ -16,7 +16,7 @@
     "dist:dir": "node scripts/make-icon.js && electron-builder --win --dir"
   },
   "devDependencies": {
-    "electron": "39.8.10",
+    "electron": "github:castlabs/electron-releases#v39.8.10+wvcus",
     "electron-builder": "^25.1.8"
   },
   "build": {
@@ -28,6 +28,11 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "electronDist": "node_modules/electron/dist",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
+    "afterPack": "./scripts/after-pack-widevine.js",
     "files": [
       "src/**/*",
       "themes/**/*",

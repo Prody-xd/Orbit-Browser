@@ -60,19 +60,22 @@ class MetricsSampler {
   }
 
   sample(tabs) {
-    const mgr = tabs ?? this.getTabs?.();
+    const managers = normalizeManagers(tabs ?? this.getTabs?.());
     const metrics = app.getAppMetrics();
 
     // pid -> pestana, para atribuir memoria y CPU a algo que el usuario reconoce.
     const pidToTab = new Map();
-    const tabList = mgr ? [...mgr.tabs.values()] : [];
-    for (const tab of tabList) {
-      const wc = tab.view?.webContents;
-      if (!wc || wc.isDestroyed()) continue;
-      try {
-        pidToTab.set(wc.getOSProcessId(), tab);
-      } catch {
-        /* proceso ya se fue */
+    const tabList = [];
+    for (const mgr of managers) {
+      for (const tab of mgr.tabs.values()) {
+        tabList.push(tab);
+        const wc = tab.view?.webContents;
+        if (!wc || wc.isDestroyed()) continue;
+        try {
+          pidToTab.set(wc.getOSProcessId(), tab);
+        } catch {
+          /* proceso ya se fue */
+        }
       }
     }
 
@@ -97,6 +100,8 @@ class MetricsSampler {
         byTab.push({
           id: tab.id,
           pid: m.pid,
+          title: tab.title,
+          url: tab.url,
           memoryMB: round(memKB / 1024),
           cpu: round(cpu, 1),
         });
@@ -134,6 +139,13 @@ class MetricsSampler {
 function round(value, decimals = 0) {
   const factor = 10 ** decimals;
   return Math.round((Number(value) || 0) * factor) / factor;
+}
+
+function normalizeManagers(input) {
+  if (!input) return [];
+  if (Array.isArray(input)) return input.filter(Boolean);
+  if (input.tabs) return [input];
+  return [];
 }
 
 module.exports = { MetricsSampler };

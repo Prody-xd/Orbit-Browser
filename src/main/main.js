@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const os = require('node:os');
-const { app, session } = require('electron');
+const { app, session, nativeTheme } = require('electron');
 
 const { registerSchemes, registerProtocol } = require('./protocol');
 const { readSettingsEarly, initSettings, getSettings, saveSettingsNow } = require('./settings');
@@ -17,6 +17,7 @@ const { registerIpc, wireShell } = require('./ipc');
 const { createHost } = require('./host');
 const { initForms, getForms } = require('./forms');
 const { initDownloads, getDownloads } = require('./downloads');
+const { applyChromeCompat } = require('./chrome-compat');
 
 const SMOKE = process.env.VITRAL_SMOKE === '1';
 if (SMOKE) {
@@ -42,6 +43,11 @@ const earlySettings = readSettingsEarly();
 const appliedSwitches = applyChromiumSwitches(earlySettings);
 const visuals = detectVisuals();
 
+// El chrome de Orbit puede ser oscuro; las paginas web no. Chromium sigue
+// el modo del sistema para `prefers-color-scheme`, asi un sitio que si
+// tiene tema oscuro puede usarlo sin que invertamos el resto.
+nativeTheme.themeSource = 'system';
+
 /** @type {ReturnType<typeof createHost>|null} */
 let host = null;
 let sessionStore = null;
@@ -53,7 +59,8 @@ app.on('second-instance', () => {
   shell.window.focus();
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await ensureWidevine();
   const settings = initSettings();
 
   // El protocolo interno debe existir tanto en la sesion por defecto (la del
@@ -74,7 +81,7 @@ app.whenReady().then(() => {
   downloads.install(session.fromPartition(PARTITION));
 
   const metrics = new MetricsSampler({
-    getTabs: () => host?.focused()?.tabs ?? null,
+    getTabs: () => host?.tabManagers?.() ?? host?.list().map((s) => s.tabs) ?? [],
     getSettings,
     onSample: () => {},
   });
@@ -137,18 +144,17 @@ app.whenReady().then(() => {
   }
 });
 
-/** Politica de permisos: nada se concede en silencio. */
+/** Politica de permisos: nada se concede en silencio, salvo lo que un
+ *  navegador necesita para sitios normales (pantalla completa, DRM). */
 function hardenSession() {
   const ses = session.fromPartition(PARTITION);
 
-  // Denegamos por defecto lo que un navegador personal casi nunca necesita.
-  // Es mas facil abrir un permiso a proposito que darse cuenta de que estaba
-  // abierto desde el principio.
-  const allowed = new Set(['fullscreen', 'clipboard-sanitized-write']);
+  applyChromeCompat(ses);
+
   ses.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(allowed.has(permission));
+    callback(isAllowedPermission(permission));
   });
-  ses.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+  ses.setPermissionCheckHandler((_wc, permission) => isAllowedPermission(permission));
 
   // El chrome de Orbit no puede abrir ventanas sueltas. Las paginas de
   // usuario si: Google y otros SSO necesitan un popup con window.opener.
@@ -157,6 +163,38 @@ function hardenSession() {
       contents.setWindowOpenHandler(() => ({ action: 'deny' }));
     }
   });
+}
+
+function isAllowedPermission(permission) {
+  if (permission === 'fullscreen' || permission === 'clipboard-sanitized-write') return true;
+  // Equivale a "Permitir que los sitios reproduzcan contenido protegido".
+  if (permission === 'mediaKeySystem') {
+    try {
+      return getSettings().browsing?.protectedContent !== false;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Widevine CDM (Netflix, etc.). Solo existe en el Electron de Castlabs. */
+async function ensureWidevine() {
+  let components;
+  try {
+    ({ components } = require('electron'));
+  } catch {
+    return;
+  }
+  if (!components?.whenReady) return;
+  try {
+    await Promise.race([
+      components.whenReady(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), SMOKE ? 25000 : 90000)),
+    ]);
+  } catch (err) {
+    console.warn('[widevine] el CDM no estuvo listo:', err.message);
+  }
 }
 
 function restoreSession(tabs) {

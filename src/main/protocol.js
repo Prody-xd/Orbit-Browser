@@ -99,6 +99,13 @@ function registerProtocol(sessions = []) {
       });
     }
 
+    if (name === 'prefs') {
+      const { getSettings } = require('./settings');
+      return new Response(JSON.stringify({ searchTemplate: getSettings().browsing.searchTemplate }), {
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      });
+    }
+
     if (name === 'source') {
       const { takeSource, sourcePage } = require('./source-view');
       const id = url.pathname.replace(/^\//, '').split('/')[0];

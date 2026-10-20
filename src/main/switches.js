@@ -50,10 +50,29 @@ function applyChromiumSwitches(settings) {
   }
 
   // Windows avisa a Chromium cuando una ventana queda tapada, y Chromium deja
-  // de pintarla. Es la optimizacion mas rentable y no cuesta nada.
-  if (process.platform === 'win32') {
-    app.commandLine.appendSwitch('enable-features', 'CalculateNativeWinOcclusion');
-  }
+  // de pintarla. IntensiveWakeUpThrottling frena timers de pestanas que no
+  // se ven, sin tocar la que estas usando.
+  const enable = ['IntensiveWakeUpThrottling'];
+  if (process.platform === 'win32') enable.push('CalculateNativeWinOcclusion');
+  app.commandLine.appendSwitch('enable-features', enable.join(','));
+  applied.push('limitación de pestañas en segundo plano: activada');
+
+  // SpareRenderer deja un proceso renderer vacio por si acaso (~decenas de MB).
+  // Sin el, una pestana nueva tarda un pelin mas; la que ya esta abierta no cambia.
+  // No invertir paginas claras: el modo oscuro lo decide el sitio.
+  app.commandLine.appendSwitch(
+    'disable-features',
+    [
+      'SpareRendererForSitePerProcess',
+      'WebContentsForceDark',
+      'WebContentsForceDarkMode',
+      'ForceWebContentsDarkMode',
+      'AutoDarkMode',
+    ].join(','),
+  );
+  app.commandLine.appendSwitch('blink-settings', 'forceDarkModeEnabled=false');
+  app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+  applied.push('proceso renderer de reserva: desactivado');
 
   return applied;
 }

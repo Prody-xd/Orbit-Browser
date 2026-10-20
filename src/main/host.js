@@ -57,6 +57,13 @@ function createHost({ visuals, network, sessionStore, saveSettingsNow, restoreSe
 
     window.on('focus', () => {
       shell.lastFocus = Date.now();
+      tabs.onWindowForeground();
+    });
+    window.on('blur', () => {
+      tabs.onWindowBackground();
+    });
+    window.on('minimize', () => {
+      tabs.onWindowMinimized();
     });
 
     window.webContents.once('did-finish-load', () => {
@@ -167,6 +174,61 @@ function createHost({ visuals, network, sessionStore, saveSettingsNow, restoreSe
     }
   }
 
+  /** Tope de pestanas vivas entre todas las ventanas, no por ventana. */
+  function enforceLiveLimits() {
+    for (const s of list()) s.tabs.enforceLimits();
+    const max = Number(getSettings().resources.maxLiveTabs) || 0;
+    if (max <= 0) return;
+    const front = focused();
+    const live = [];
+    for (const s of list()) {
+      for (const tab of s.tabs.tabs.values()) {
+        if (tab.view) live.push({ shell: s, tab });
+      }
+    }
+    live.sort((a, b) => a.tab.lastActiveAt - b.tab.lastActiveAt);
+    let excess = live.length - max;
+    for (const { shell, tab } of live) {
+      if (excess <= 0) break;
+      const isFrontActive = front && shell === front && tab.id === shell.tabs.activeId;
+      if (isFrontActive) continue;
+      if (shell.tabs._isSleepCandidate(tab, { allowActive: true }) && shell.tabs.sleep(tab.id, { force: true })) {
+        excess--;
+      }
+    }
+  }
+
+  function sleepTabByPid(pid) {
+    const target = Number(pid);
+    if (!target) return false;
+    for (const s of list()) {
+      for (const tab of s.tabs.tabs.values()) {
+        if (!tab.view || tab.view.webContents.isDestroyed()) continue;
+        try {
+          if (tab.view.webContents.getOSProcessId() !== target) continue;
+        } catch {
+          continue;
+        }
+        const force = tab.id === s.tabs.activeId && !s.window.isFocused();
+        return s.tabs.sleep(tab.id, { force });
+      }
+    }
+    return false;
+  }
+
+  function sleepOthersExcept(keep) {
+    let count = 0;
+    for (const s of list()) {
+      if (s === keep) count += s.tabs.sleepAllButActive();
+      else count += s.tabs.sleepBackground({ includeActive: true });
+    }
+    return count;
+  }
+
+  function tabManagers() {
+    return list().map((s) => s.tabs);
+  }
+
   function restoreWindows() {
     const settings = getSettings();
     const saved = sessionStore?.data;
@@ -186,7 +248,7 @@ function createHost({ visuals, network, sessionStore, saveSettingsNow, restoreSe
     open({ restore: true });
   }
 
-  return { shells, list, fromSender, atPoint, focused, open, tearOff, persistSession, restoreWindows };
+  return { shells, list, fromSender, atPoint, focused, open, tearOff, persistSession, restoreWindows, enforceLiveLimits, sleepTabByPid, sleepOthersExcept, tabManagers };
 }
 
 function restoreSessionInto(tabs, saved, settings) {

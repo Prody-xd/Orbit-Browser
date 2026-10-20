@@ -8,6 +8,23 @@ const SECTIONS = [
   ['sistema', 'Sistema'],
 ];
 
+const SEARCH_ENGINES = [
+  { id: 'google', label: 'Google', template: 'https://www.google.com/search?q=%s' },
+  { id: 'ddg', label: 'DuckDuckGo', template: 'https://duckduckgo.com/?q=%s' },
+  { id: 'bing', label: 'Bing', template: 'https://www.bing.com/search?q=%s' },
+  { id: 'brave', label: 'Brave', template: 'https://search.brave.com/search?q=%s' },
+  { id: 'ecosia', label: 'Ecosia', template: 'https://www.ecosia.org/search?q=%s' },
+  { id: 'startpage', label: 'Startpage', template: 'https://www.startpage.com/sp/search?query=%s' },
+  { id: 'qwant', label: 'Qwant', template: 'https://www.qwant.com/?q=%s' },
+  { id: 'yahoo', label: 'Yahoo', template: 'https://search.yahoo.com/search?p=%s' },
+  { id: 'wikipedia', label: 'Wikipedia', template: 'https://es.wikipedia.org/w/index.php?search=%s' },
+  { id: 'youtube', label: 'YouTube', template: 'https://www.youtube.com/results?search_query=%s' },
+];
+
+function engineIdOf(template) {
+  return SEARCH_ENGINES.find((engine) => engine.template === template)?.id ?? 'custom';
+}
+
 /**
  * Panel de ajustes.
  *
@@ -26,6 +43,9 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
   let section = 'recursos';
   let metricsBox = null;
   let sample = null;
+  /** Borrador del buscador hasta pulsar Guardar. */
+  let searchDraft = null;
+  let searchNote = '';
   const pendingRestart = new Set();
 
   tabsEl.replaceChildren(
@@ -80,6 +100,11 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
     syncTabs();
     clear(container);
     if (pendingRestart.size) mount(container, restartBanner());
+
+    if (section !== 'navegacion') {
+      searchDraft = null;
+      searchNote = '';
+    }
 
     if (section === 'recursos') renderRecursos();
     else if (section === 'apariencia') renderApariencia();
@@ -148,14 +173,14 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
 
         row(
           'Dormir pestañas inactivas',
-          'Libera el proceso completo de la pestaña. Al volver se recarga y se recupera el scroll.',
+          'Libera el proceso de pestañas que no usas, también en ventanas en segundo plano o minimizadas. Al volver se recarga y se recupera el scroll.',
           toggle(r.sleepEnabled, (value) => patchAndRender({ resources: { sleepEnabled: value, profile: 'custom' } })),
         ),
 
         r.sleepEnabled
           ? liveRow({
               label: 'Dormir después de',
-              description: 'Tiempo sin usar una pestaña antes de suspenderla.',
+              description: 'Tiempo sin usar una pestaña o una ventana de fondo antes de suspenderla.',
               min: 1,
               max: 120,
               value: r.sleepAfterMinutes,
@@ -167,7 +192,7 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
 
         liveRow({
           label: 'Máximo de pestañas vivas',
-          description: 'Al pasar del tope, se duerme la menos usada. 0 = sin límite.',
+          description: 'Entre todas las ventanas. Al pasar del tope, se duerme la menos usada. 0 = sin límite.',
           min: 0,
           max: 30,
           value: r.maxLiveTabs,
@@ -193,7 +218,7 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
         ),
 
         h('button.btn.wide', {
-          text: 'Dormir todas menos la actual',
+          text: 'Dormir todas menos esta ventana',
           on: {
             click: async () => {
               const count = await window.orbit.tabs.sleepOthers();
@@ -337,7 +362,7 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
       ]),
       note ? h('div.hint', { text: note }) : null,
       h('div.hint', {
-        text: `Sistema: ${formatMB(system.totalMemoryMB - system.freeMemoryMB)} en uso de ${formatMB(system.totalMemoryMB)}.`,
+        text: `Sistema: ${formatMB(system.totalMemoryMB - system.freeMemoryMB)} en uso de ${formatMB(system.totalMemoryMB)}. Memoria y pestañas incluyen todas las ventanas de Orbit.`,
       }),
     );
 
@@ -350,10 +375,12 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
           {},
           byTab.map((entry) => {
             const tab = tabsById.get(entry.id);
+            const title = entry.title || tab?.title || `Pestaña ${entry.id}`;
+            const url = entry.url || tab?.url || '';
             return h('div.proc', {}, [
               h('div.proc-name', {
-                text: tab?.title ?? `Pestaña ${entry.id}`,
-                title: `${tab?.url ?? ''}\nPID ${entry.pid} · ${entry.cpu.toFixed(1)} % CPU`,
+                text: title,
+                title: `${url}\nPID ${entry.pid} · ${entry.cpu.toFixed(1)} % CPU`,
               }),
               h('div.proc-bar', {}, [
                 h('span', { style: { width: `${Math.round((entry.memoryMB / max) * 100)}%` } }),
@@ -362,13 +389,78 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
               h('button.proc-sleep', {
                 text: 'z',
                 title: 'Dormir esta pestaña',
-                on: { click: () => window.orbit.tabs.sleep(entry.id) },
+                on: {
+                  click: () => {
+                    if (entry.pid) window.orbit.tabs.sleepPid(entry.pid);
+                    else window.orbit.tabs.sleep(entry.id);
+                  },
+                },
               }),
             ]);
           }),
         ),
       );
     }
+  }
+
+  function searchPicker(b) {
+    const savedId = engineIdOf(b.searchTemplate);
+    const draft = searchDraft ?? {
+      id: savedId,
+      custom: savedId === 'custom' ? b.searchTemplate : 'https://example.com/search?q=%s',
+    };
+    const options = [
+      ...SEARCH_ENGINES.map((engine) => [engine.id, engine.label]),
+      ['custom', 'Personalizado'],
+    ];
+
+    return h('div.row.stacked', {}, [
+      h('div.row-label', {}, [
+        'Buscador',
+        h('small', {
+          text: 'Se usa en la barra de direcciones y en la página de inicio. Pulsa Guardar para aplicarlo.',
+        }),
+      ]),
+      h('div.search-picker', {}, [
+        select(options, draft.id, (id) => {
+          searchDraft = { id, custom: draft.custom };
+          searchNote = '';
+          render();
+        }),
+        draft.id === 'custom'
+          ? h('input.text-input', {
+              type: 'text',
+              value: draft.custom,
+              placeholder: 'https://…?q=%s',
+              on: {
+                input: (event) => {
+                  searchDraft = { id: 'custom', custom: event.target.value };
+                },
+              },
+            })
+          : null,
+        h('button.btn.primary', {
+          text: 'Guardar buscador',
+          on: {
+            click: async () => {
+              const next = searchDraft ?? draft;
+              const engine = SEARCH_ENGINES.find((item) => item.id === next.id);
+              const template = next.id === 'custom' ? String(next.custom || '').trim() : engine?.template;
+              if (!template || !template.includes('%s')) {
+                searchNote = 'La URL tiene que incluir %s donde va el texto buscado.';
+                render();
+                return;
+              }
+              b.searchTemplate = template;
+              searchDraft = null;
+              searchNote = 'Guardado. Las búsquedas nuevas ya usan este buscador.';
+              await patchAndRender({ browsing: { searchTemplate: template } });
+            },
+          },
+        }),
+        searchNote ? h('div.hint', { text: searchNote }) : null,
+      ]),
+    ]);
   }
 
   // --- Apariencia ---
@@ -437,6 +529,9 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
             },
           }),
         ]),
+        h('div.hint', {
+          text: 'El tema colorea Orbit, no las páginas web. Una web solo se ve oscura si ella misma ofrece modo oscuro.',
+        }),
         h('div.hint', {
           text: 'Los temas son archivos JSON. Edita uno, guarda y vuelve a elegirlo para ver el cambio.',
         }),
@@ -622,20 +717,7 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
           }),
         ),
 
-        row(
-          'Buscador',
-          'Usa %s donde va el texto buscado.',
-          h('input.text-input', {
-            type: 'text',
-            value: b.searchTemplate,
-            on: {
-              change: (event) => {
-                b.searchTemplate = event.target.value;
-                patchQuiet({ browsing: { searchTemplate: event.target.value } });
-              },
-            },
-          }),
-        ),
+        searchPicker(b),
       ]),
     );
 
@@ -669,9 +751,9 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
       h('div.section', {}, [
         h('div.section-title', { text: 'Privacidad' }),
         row(
-          'Bloquear rastreadores',
-          'Lista por dominio: cubre también subdominios. Nunca bloquea la página principal.',
-          toggle(b.blockTrackers, (value) => patchAndRender({ browsing: { blockTrackers: value } })),
+          'Permitir contenido protegido',
+          'DRM para Netflix, Disney+ y Spotify. Es lo que Chrome llama “reproducir contenido protegido”.',
+          toggle(b.protectedContent !== false, (value) => patchAndRender({ browsing: { protectedContent: value } })),
         ),
         stats
           ? h('div', {}, [

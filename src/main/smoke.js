@@ -223,13 +223,109 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, down
     const netState = tabs.tabs.get(netTab);
     check('carga una pagina de internet', loaded && !netState.error, netState?.url ?? 'sin url');
     check('la pagina reporta titulo', Boolean(netState?.title), netState?.title ?? '');
+    const drm = netState?.view
+      ? await withTimeout(
+          netState.view.webContents.executeJavaScript(
+            `(async () => {
+              const ua = navigator.userAgent;
+              try {
+                await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+                  initDataTypes: ['cenc'],
+                  videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
+                }]);
+                return { ua, eme: 'ok' };
+              } catch (err) {
+                return { ua, eme: String(err && err.name ? err.name : err) };
+              }
+            })()`,
+            true,
+          ),
+          8000,
+        )
+      : null;
+    check('el user-agent de la pagina no anuncia Electron', Boolean(drm?.ua && !/Electron/i.test(drm.ua)), drm?.ua ?? '');
+    const brands = netState?.view
+      ? await withTimeout(
+          netState.view.webContents.executeJavaScript(
+            `navigator.userAgentData ? navigator.userAgentData.brands.map((b) => b.brand).join(',') : ''`,
+            true,
+          ),
+          3000,
+        )
+      : '';
+    check(
+      'las Client Hints no anuncian Electron',
+      typeof brands === 'string' && !/Electron/i.test(brands),
+      String(brands),
+    );
+    const chromeCompat = require('./chrome-compat');
+    check(
+      'Google login no se disfraza de Chrome',
+      chromeCompat.isGoogleAuthUrl('https://accounts.google.com/v3/signin/identifier') &&
+        /Electron\//i.test(chromeCompat.electronUserAgent()) &&
+        !/Orbit/i.test(chromeCompat.electronUserAgent()) &&
+        !/Electron/i.test(chromeCompat.pageUserAgent()),
+      chromeCompat.electronUserAgent(),
+    );
+    check(
+      'Google login usa el flujo ligero',
+      chromeCompat.rewriteGoogleAuthUrl(
+        'https://accounts.google.com/v3/signin/identifier?flowName=GlifWebSignIn',
+      )?.includes('flowName=WebLiteSignIn') === true,
+    );
+    check(
+      'el DRM no esta denegado por permiso',
+      Boolean(drm && drm.eme !== 'NotAllowedError'),
+      drm?.eme ?? 'sin respuesta',
+    );
     if (netState?.view) await shot('03-pagina-web', netState.view.webContents);
     await shot('04-shell-dos-pestanas', window.webContents);
+
+    const lightId = tabs.create(
+      'data:text/html;charset=utf-8,' +
+        encodeURIComponent(
+          '<!doctype html><html><head><title>claro</title></head><body style="background:#ffffff;color:#111111"><p>pagina clara</p></body></html>',
+        ),
+      { active: true },
+    );
+    const lightLoaded = await waitFor(() => {
+      const t = tabs.tabs.get(lightId);
+      return Boolean(t?.view && !t.loading && !t.error);
+    }, 8000);
+    const lightTab = tabs.tabs.get(lightId);
+    const lightPaint = lightLoaded && lightTab?.view
+      ? await withTimeout(
+          lightTab.view.webContents.executeJavaScript(
+            `(() => {
+              const body = getComputedStyle(document.body);
+              return { bg: body.backgroundColor, color: body.color };
+            })()`,
+            true,
+          ),
+          3000,
+        )
+      : null;
+    const rgb = (value) => {
+      const m = String(value || '').match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+      return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+    };
+    const bg = rgb(lightPaint?.bg);
+    const fg = rgb(lightPaint?.color);
+    check(
+      'una pagina clara no se invierte a modo oscuro',
+      Boolean(bg && fg && bg[0] > 240 && bg[1] > 240 && bg[2] > 240 && fg[0] < 80 && fg[1] < 80 && fg[2] < 80),
+      JSON.stringify(lightPaint),
+    );
+    tabs.close(lightId);
+    if (netTab != null) tabs.activate(netTab);
 
     // --- 4. la barra de direcciones resuelve texto y urls ---
     check('texto suelto se convierte en busqueda', tabs._resolveInput('gatos').includes('duckduckgo'));
     check('un dominio se convierte en https', tabs._resolveInput('example.com') === 'https://example.com');
     check('una url se respeta', tabs._resolveInput('http://example.com/x') === 'http://example.com/x');
+    settingsModule.patchSettings({ browsing: { searchTemplate: 'https://www.google.com/search?q=%s' } });
+    check('el buscador guardado se aplica al instante', tabs._resolveInput('gatos').includes('google.com/search'));
+    settingsModule.patchSettings({ browsing: { searchTemplate: 'https://duckduckgo.com/?q=%s' } });
 
     // --- 5. dormir libera el proceso ---
     const beforeSleep = process.platform === 'win32' ? metrics.sample().totals : null;
@@ -256,6 +352,20 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, down
       return t && !t.sleeping && Boolean(t.view) && !t.loading;
     }, 12000);
     check('despertar vuelve a cargar la pestana', woke);
+
+    const visibleId = tabs.activeId;
+    check('se puede dormir la pestana visible de una ventana oculta', tabs.sleep(visibleId, { force: true }));
+    const released = await waitFor(() => {
+      const t = tabs.tabs.get(visibleId);
+      return Boolean(t?.sleeping && !t.view);
+    }, 4000);
+    check('dormir la visible libera su proceso', released);
+    tabs.onWindowForeground();
+    const restoredFront = await waitFor(() => {
+      const t = tabs.tabs.get(visibleId);
+      return t && !t.sleeping && Boolean(t.view);
+    }, 12000);
+    check('al volver al frente se despierta sola', restoredFront);
 
     // --- 7. el tope de pestanas vivas se respeta ---
     settingsModule.patchSettings({ resources: { maxLiveTabs: 1 } });
@@ -528,6 +638,12 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, down
       const other = host.list().find((s) => s.window !== window);
       check('la pestana vive en la ventana nueva', Boolean(other?.tabs.order.length), `${other?.tabs.order.length ?? 0} pestanas`);
       check('la ventana original conserva pestanas', tabs.order.length >= 1, `${tabs.order.length} pestanas`);
+      const across = metrics.sample(host.tabManagers());
+      check(
+        'el consumo cuenta pestanas de todas las ventanas',
+        across.totals.totalTabs >= 2,
+        `${across.totals.totalTabs} pestanas · ${across.totals.liveTabs} vivas`,
+      );
       if (other && !other.window.isDestroyed()) other.window.close();
       await waitFor(() => host.list().length === beforeWindows, 4000);
     }

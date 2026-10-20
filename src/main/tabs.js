@@ -8,7 +8,27 @@ const { createTabDialogs, attachPageDialogs } = require('./js-dialogs');
 const { getForms, pageKey } = require('./forms');
 
 const PARTITION = 'persist:orbit';
-const PAGE_BACKGROUND = '#16161e';
+
+/**
+ * Lienzo detras de la pagina.
+ *
+ * Las paginas web asumen el fondo blanco de Chromium. Si pintamos el
+ * WebContentsView de oscuro, un sitio claro (o uno que no declara fondo)
+ * se ve "en modo oscuro" aunque no lo tenga. El tema de Orbit solo colorea
+ * las paginas internas `orbit://`; el resto queda blanco y, si el sitio
+ * implementa modo oscuro (`prefers-color-scheme` o su propio interruptor),
+ * lo aplica el.
+ */
+function pageCanvasColor(url, getSettings) {
+  if (!String(url || '').startsWith('orbit:')) return '#ffffff';
+  try {
+    const { getTheme } = require('./themes');
+    const theme = getTheme(getSettings?.()?.appearance?.theme);
+    return theme?.colors?.page || theme?.colors?.base || '#16161e';
+  } catch {
+    return '#16161e';
+  }
+}
 
 /**
  * Gestor de pestanas.
@@ -42,6 +62,8 @@ class TabManager extends EventEmitter {
     this._boundsReady = false;
     this.findBarOpen = false;
     this.jsDialogs = createTabDialogs(this);
+    /** Timestamp de cuando esta ventana dejo de estar al frente. 0 = al frente. */
+    this._backgroundSince = 0;
 
     this._sweepTimer = setInterval(() => this._sweepIdle(), 15_000);
     if (typeof this._sweepTimer.unref === 'function') this._sweepTimer.unref();
@@ -233,6 +255,7 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab || tab.sleeping || !tab.view) return false;
     if (!force && id === this.activeId) return false;
+    if (tab.jsDialog) return false;
 
     const wc = tab.view.webContents;
     // Guardamos el scroll antes de matar el proceso para que despertar no
@@ -281,13 +304,39 @@ class TabManager extends EventEmitter {
 
   /** Duerme todas menos la activa. Boton de panico para la RAM. */
   sleepAllButActive() {
+    return this.sleepBackground({ includeActive: false });
+  }
+
+  /**
+   * Duerme pestanas vivas de esta ventana.
+   * `includeActive` sirve para ventanas que no estan al frente: ahi la
+   * "activa" tampoco se esta mirando.
+   */
+  sleepBackground({ includeActive = false } = {}) {
     let count = 0;
     for (const tab of this.tabs.values()) {
-      if (tab.id !== this.activeId && tab.view && this._isSleepCandidate(tab)) {
-        if (this.sleep(tab.id)) count++;
-      }
+      if (!this._isSleepCandidate(tab, { allowActive: includeActive })) continue;
+      if (this.sleep(tab.id, { force: includeActive })) count++;
     }
     return count;
+  }
+
+  /** La ventana volvio al frente: despierta la pestana visible si estaba dormida. */
+  onWindowForeground() {
+    this._backgroundSince = 0;
+    const tab = this.tabs.get(this.activeId);
+    if (tab?.sleeping) this.wake(this.activeId, { activating: true });
+  }
+
+  onWindowBackground() {
+    if (!this._backgroundSince) this._backgroundSince = Date.now();
+  }
+
+  /** Minimizar: no se ve nada, se puede liberar ya (salvo audio/fijadas). */
+  onWindowMinimized() {
+    if (!this.getSettings().resources.sleepEnabled) return;
+    if (!this._backgroundSince) this._backgroundSince = Date.now();
+    this.sleepBackground({ includeActive: true });
   }
 
   // -------------------------------------------------------------- navegacion
@@ -394,6 +443,14 @@ class TabManager extends EventEmitter {
     this.jsDialogs.layout();
   }
 
+  /** Recolorea el lienzo de cada pestana (p. ej. al cambiar el tema). */
+  refreshPageCanvases() {
+    for (const tab of this.tabs.values()) {
+      if (!tab.view) continue;
+      tab.view.setBackgroundColor(pageCanvasColor(tab.url, () => this.getSettings()));
+    }
+  }
+
   /** Busca texto en la pestana con el resaltado nativo de Chromium. */
   findInPage(id, text, opts = {}) {
     const tab = this.tabs.get(id);
@@ -493,7 +550,7 @@ class TabManager extends EventEmitter {
       },
     });
 
-    view.setBackgroundColor(PAGE_BACKGROUND);
+    view.setBackgroundColor(pageCanvasColor(tab.url, () => this.getSettings()));
     tab.view = view;
     if (this._ignorePageMouse && typeof view.setIgnoreMouseEvents === 'function') {
       view.setIgnoreMouseEvents(true);
@@ -573,6 +630,7 @@ class TabManager extends EventEmitter {
       const mgr = owner();
       tab.url = url;
       tab.error = null;
+      if (tab.view) tab.view.setBackgroundColor(pageCanvasColor(url, () => mgr?.getSettings()));
       noteFormVisit(tab, url);
       mgr?.emit('main-navigate', tab.id);
       touch();
@@ -662,13 +720,18 @@ class TabManager extends EventEmitter {
     });
   }
 
-  _isSleepCandidate(tab) {
+  _isSleepCandidate(tab, { allowActive = false } = {}) {
     const r = this.getSettings().resources;
     if (!tab.view || tab.sleeping) return false;
-    if (tab.id === this.activeId) return false;
+    if (!allowActive && tab.id === this.activeId) return false;
+    if (tab.jsDialog) return false;
     if (r.keepAudibleAwake !== false && tab.audible) return false;
     if (r.keepPinnedAwake && tab.pinned) return false;
     return true;
+  }
+
+  _windowIsForeground() {
+    return Boolean(this.window && !this.window.isDestroyed() && this.window.isFocused() && !this.window.isMinimized());
   }
 
   /** Duerme pestanas que llevan demasiado tiempo sin uso. */
@@ -677,7 +740,13 @@ class TabManager extends EventEmitter {
     if (!r.sleepEnabled) return;
     const limitMs = Math.max(1, Number(r.sleepAfterMinutes) || 10) * 60_000;
     const now = Date.now();
+    const windowIdle = !this._windowIsForeground() && this._backgroundSince > 0 && now - this._backgroundSince > limitMs;
+
     for (const tab of this.tabs.values()) {
+      if (tab.id === this.activeId && windowIdle && this._isSleepCandidate(tab, { allowActive: true })) {
+        this.sleep(tab.id, { force: true });
+        continue;
+      }
       if (this._isSleepCandidate(tab) && now - tab.lastActiveAt > limitMs) this.sleep(tab.id);
     }
   }
@@ -689,9 +758,10 @@ class TabManager extends EventEmitter {
 
     const live = [...this.tabs.values()].filter((t) => t.view).sort((a, b) => a.lastActiveAt - b.lastActiveAt);
     let excess = live.length - max;
+    const allowActive = !this._windowIsForeground();
     for (const tab of live) {
       if (excess <= 0) break;
-      if (this._isSleepCandidate(tab) && this.sleep(tab.id)) excess--;
+      if (this._isSleepCandidate(tab, { allowActive }) && this.sleep(tab.id, { force: allowActive })) excess--;
     }
   }
 

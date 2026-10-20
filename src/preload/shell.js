@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('orbit', {
     close: (id) => ipcRenderer.invoke('tabs:close', id),
     activate: (id) => ipcRenderer.invoke('tabs:activate', id),
     sleep: (id) => ipcRenderer.invoke('tabs:sleep', id),
+    sleepPid: (pid) => ipcRenderer.invoke('tabs:sleepPid', pid),
     wake: (id) => ipcRenderer.invoke('tabs:wake', id),
     sleepOthers: () => ipcRenderer.invoke('tabs:sleepOthers'),
     navigate: (id, url) => ipcRenderer.invoke('tabs:navigate', id, url),

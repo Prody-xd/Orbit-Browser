@@ -80,6 +80,8 @@ const DEFAULTS = {
     restoreAsleep: true,
     /** Recordar texto de formularios en paginas visitadas a menudo. */
     rememberForms: true,
+    /** EME/Widevine: Netflix, Disney+, Spotify. chrome://settings/content/protectedContent */
+    protectedContent: true,
   },
 };
 
