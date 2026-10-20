@@ -4,15 +4,60 @@
   "version": "0.1.0",
   "private": true,
   "description": "Orbit Browser: navegador personal basado en Chromium, con control de recursos y temas translucidos",
+  "author": "Prody-xd",
+  "license": "MIT",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "icon": "node scripts/make-icon.js",
+    "dist": "node scripts/make-icon.js && electron-builder --win nsis --x64",
+    "dist:dir": "node scripts/make-icon.js && electron-builder --win --dir"
   },
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
-    "electron": "39.8.10"
+    "electron": "39.8.10",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.prodyxd.orbit-browser",
+    "productName": "Orbit",
+    "copyright": "Copyright © Prody-xd",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "themes/**/*",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Orbit-Browser-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Orbit Browser",
+      "uninstallDisplayName": "Orbit Browser",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    }
   }
 }

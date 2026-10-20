@@ -46,8 +46,16 @@ export function applyTheme(theme, appearance, visuals) {
   // Windows 10 la translucidez es limpia, sin difuminar el fondo.
   root.setProperty('--blur', `${opaque ? 0 : appearance.chromeBlur}px`);
 
+  // El neon no es un color mas: es un brillo. Solo los temas que lo piden
+  // encienden las sombras; el resto deja la intensidad en cero y el CSS no
+  // pinta nada extra.
+  const neon = Boolean(theme?.neon);
+  root.setProperty('--glow-strength', neon ? '18px' : '0px');
+  root.setProperty('--glow-alpha', neon ? '0.62' : '0');
+
   document.body.classList.toggle('surface-opaque', opaque);
   document.body.classList.toggle('theme-light', theme?.dark === false);
+  document.body.classList.toggle('theme-neon', neon);
   document.body.dataset.surface = appearance.surface;
   document.body.dataset.visualBlur = String(Boolean(visuals?.supportsBlur));
 }
@@ -55,5 +63,8 @@ export function applyTheme(theme, appearance, visuals) {
 /** Colores para la miniatura de un tema en el selector. */
 export function themeSwatch(theme) {
   const c = theme?.colors ?? {};
+  if (theme?.neon) {
+    return `radial-gradient(circle at 30% 30%, ${c.accent ?? '#f00'} 0%, ${c.base ?? '#000'} 58%, ${c.border ?? '#f00'} 100%)`;
+  }
   return `linear-gradient(135deg, ${c.base ?? '#000'} 0%, ${c.chrome ?? '#111'} 55%, ${c.accent ?? '#888'} 100%)`;
 }

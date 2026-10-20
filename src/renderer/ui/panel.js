@@ -22,7 +22,7 @@ const SECTIONS = [
  *    pestaña, o al reiniciar. Chromium lee algunos parámetros una sola vez al
  *    arrancar, y fingir lo contrario solo confunde.
  */
-export function createPanel({ container, tabsEl, state, onSectionChange }) {
+export function createPanel({ container, tabsEl, state, onSectionChange, onLayoutChange }) {
   let section = 'recursos';
   let metricsBox = null;
   let sample = null;
@@ -392,10 +392,14 @@ export function createPanel({ container, tabsEl, state, onSectionChange }) {
                 on: {
                   click: async () => {
                     a.theme = theme.id;
-                    // Aplicamos el color antes de esperar al disco: cambiar de
-                    // tema tiene que sentirse instantáneo.
+                    // El acento guardado pisa el del tema. Al elegir un tema
+                    // nuevo, el acento viaja con el: si no, Neón rojo se vería
+                    // con el azul del tema anterior.
+                    if (theme.colors?.accent) a.accent = theme.colors.accent;
                     applyTheme(theme, a, state.visuals);
-                    await patchQuiet({ appearance: { theme: theme.id } });
+                    await patchQuiet({
+                      appearance: { theme: theme.id, accent: a.accent },
+                    });
                     render();
                   },
                 },
@@ -517,6 +521,25 @@ export function createPanel({ container, tabsEl, state, onSectionChange }) {
         h('div.section-title', { text: 'Forma y color' }),
 
         row(
+          'Pestañas',
+          'Arriba es la barra clásica. A un lado, arrastra el borde hasta dejar solo el icono. El hueco vacío mueve la ventana.',
+          select(
+            [
+              ['top', 'Arriba'],
+              ['left', 'Izquierda'],
+              ['right', 'Derecha'],
+            ],
+            a.tabStrip ?? 'top',
+            async (value) => {
+              a.tabStrip = value;
+              await patchQuiet({ appearance: { tabStrip: value } });
+              onLayoutChange?.();
+              render();
+            },
+          ),
+        ),
+
+        row(
           'Color de acento',
           'Sobrescribe el acento del tema.',
           h('input', {
@@ -632,6 +655,11 @@ export function createPanel({ container, tabsEl, state, onSectionChange }) {
               toggle(b.restoreAsleep, (value) => patchAndRender({ browsing: { restoreAsleep: value } })),
             )
           : null,
+        row(
+          'Recordar lo escrito en formularios',
+          'Sugiere usuarios y correos al volver. El resto de campos, si entras más de 3 veces y escribes lo mismo. Nunca contraseñas.',
+          toggle(b.rememberForms !== false, (value) => patchAndRender({ browsing: { rememberForms: value } })),
+        ),
       ]),
     );
 

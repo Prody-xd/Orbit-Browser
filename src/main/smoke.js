@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const settingsModule = require('./settings');
 
 /**
@@ -17,7 +17,7 @@ const settingsModule = require('./settings');
  *
  * Uso: `npm run smoke`
  */
-async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
+async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, downloads, forms }) {
   const outDir = path.join(app.getAppPath(), 'out', 'smoke');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -48,11 +48,12 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
   };
 
   try {
-    await wait(1800);
+    await resetWorkspace({ tabs, host, window });
+    await wait(800);
 
     // --- 1. la cascara y la primera pestana existen ---
     const first = tabs.snapshot();
-    check('la ventana abre con una pestana', first.tabs.length >= 1, `${first.tabs.length} pestanas`);
+    check('la ventana abre con una pestana', first.tabs.length === 1, `${first.tabs.length} pestanas`);
     check('hay pestana activa', first.activeId != null, `id ${first.activeId}`);
 
     // --- 2. el layout llego desde el renderer y la vista se coloco ---
@@ -77,6 +78,127 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
       ? await withTimeout(activeTab.view.webContents.executeJavaScript('document.title', true), 3000)
       : null;
     check('la pagina de inicio ejecuta su script', startTitle === 'Orbit', String(startTitle));
+
+    // El atajo real llega por IPC (foco en la pagina o en el chrome). El
+    // KeyboardEvent sintetico no basta: Chromium no lo trata como Ctrl+F.
+    window.webContents.send('app:shortcut', 'ctrl+f');
+    await wait(250);
+    const findOpened = await window.webContents.executeJavaScript(
+      "Boolean(document.getElementById('findbar') && !document.getElementById('findbar').hidden)",
+      true,
+    );
+    check('Ctrl+F abre la barra de busqueda', findOpened);
+    await window.webContents.executeJavaScript(
+      `(() => {
+        const input = document.getElementById('find-input');
+        if (!input) return;
+        input.focus();
+        input.value = 'Orbit';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`,
+      true,
+    );
+    let findCount = '';
+    const foundDeadline = Date.now() + 4000;
+    let found = false;
+    while (Date.now() < foundDeadline) {
+      findCount = (await withTimeout(
+        window.webContents.executeJavaScript("document.getElementById('find-count')?.textContent || ''", true),
+        800,
+      )) || '';
+      if (findCount && findCount !== 'Sin resultados' && /\d/.test(findCount)) {
+        found = true;
+        break;
+      }
+      await wait(150);
+    }
+    check('buscar en la pagina encuentra coincidencias', found, String(findCount));
+    window.webContents.send('app:shortcut', 'escape');
+    await wait(200);
+    const findClosed = await withTimeout(
+      window.webContents.executeJavaScript("Boolean(document.getElementById('findbar')?.hidden)", true),
+      800,
+    );
+    check('Esc cierra la barra de busqueda', findClosed === true);
+
+    const alertPage = tabs.tabs.get(tabs.activeId)?.view?.webContents;
+    const alertDone = alertPage
+      ? alertPage.executeJavaScript('alert("hola-orbit"); "done"', true)
+      : Promise.resolve(null);
+    const alertOpened = await waitFor(() => tabs.jsDialogs?.isOpen?.(), 5000);
+    check('alert abre el dialogo de Orbit', alertOpened);
+    let alertText = '';
+    if (alertOpened && tabs.jsDialogs.overlayContents) {
+      alertText = (await withTimeout(
+        tabs.jsDialogs.overlayContents.executeJavaScript(
+          `JSON.stringify({
+            title: document.getElementById('title')?.textContent || '',
+            message: document.getElementById('message')?.textContent || '',
+          })`,
+          true,
+        ),
+        2000,
+      )) || '';
+      await shot('02b-alert', tabs.jsDialogs.overlayContents);
+      await tabs.jsDialogs.overlayContents.executeJavaScript("document.getElementById('btn-ok')?.click()", true);
+    }
+    check('el dialogo muestra el mensaje del alert', /hola-orbit/.test(alertText), String(alertText));
+    const alertClosed = await withTimeout(alertDone, 4000);
+    check('aceptar cierra el alert y el script sigue', alertClosed === 'done' && !tabs.jsDialogs.isOpen(), String(alertClosed));
+
+    const formStamp = Date.now();
+    const formUrl = `https://forms.example/login-${formStamp}`;
+    if (forms) {
+      for (let i = 0; i < 4; i++) forms.noteVisit(formUrl);
+      forms.record({ url: formUrl, field: 'email', value: 'yo@orbit.local' });
+      forms.record({ url: formUrl, field: 'email', value: 'yo@orbit.local' });
+      const hints = forms.suggest({ url: formUrl, field: 'email', prefix: 'yo' });
+      check(
+        'sugiere el texto repetido tras 4 visitas',
+        Array.isArray(hints) && hints.some((h) => h.value === 'yo@orbit.local'),
+        JSON.stringify(hints),
+      );
+      const fewUrl = `https://forms.example/once-${formStamp}`;
+      forms.noteVisit(fewUrl);
+      forms.noteVisit(fewUrl);
+      forms.noteVisit(fewUrl);
+      forms.record({ url: fewUrl, field: 'q', value: 'hola' });
+      forms.record({ url: fewUrl, field: 'q', value: 'hola' });
+      check('no sugiere con 3 visitas o menos', forms.suggest({ url: fewUrl, field: 'q', prefix: '' }).length === 0);
+      forms.record({ url: formUrl, field: 'password', value: 'secreto123' });
+      check(
+        'no recuerda contrasenas',
+        !forms.suggest({ url: formUrl, field: 'password', prefix: '', kind: 'password' }).some((h) => /secreto/.test(h.value)),
+      );
+      const userUrl = `https://forms.example/signin-${formStamp}`;
+      forms.noteVisit(userUrl);
+      forms.record({ url: userUrl, field: 'username', value: 'prody', kind: 'username' });
+      check(
+        'sugiere el usuario desde la primera vez',
+        forms.suggest({ url: userUrl, field: 'username', prefix: '', kind: 'username' }).some((h) => h.value === 'prody'),
+      );
+    }
+
+    const hasDlBtn = await window.webContents.executeJavaScript(
+      "Boolean(document.getElementById('btn-downloads'))",
+      true,
+    );
+    check('hay boton de descargas', hasDlBtn);
+
+    if (downloads && alertPage) {
+      try {
+        alertPage.downloadURL(`data:text/plain,${encodeURIComponent('hola-orbit-dl')}`);
+      } catch (err) {
+        log(`downloadURL fallo: ${err.message}`);
+      }
+      const dlSeen = await waitFor(() => (downloads.snapshot().items || []).length > 0 || downloads.snapshot().busy, 8000);
+      const dlSnap = downloads.snapshot();
+      check(
+        'una descarga aparece en el panel',
+        dlSeen && (dlSnap.busy || dlSnap.items.length > 0),
+        `${dlSnap.items.length} items · ${dlSnap.items[0]?.filename || ''} · ${dlSnap.items[0]?.state || ''} · ${dlSnap.percent}%`,
+      );
+    }
 
     const themeCss = activeTab?.view
       ? await withTimeout(
@@ -148,6 +270,17 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     check('el bloqueador tiene reglas cargadas', stats.rules > 10, `${stats.rules} dominios`);
     log(`peticiones bloqueadas hasta ahora: ${stats.blockedCount}`);
 
+    const netInBar = await window.webContents.executeJavaScript(
+      `(() => {
+        const net = document.getElementById('btn-network');
+        const statsEl = document.getElementById('tab-stats');
+        if (!net || !statsEl) return false;
+        return Boolean(net.compareDocumentPosition(statsEl) & Node.DOCUMENT_POSITION_FOLLOWING);
+      })()`,
+      true,
+    );
+    check('el recuento de fetch esta a la izquierda de las pestañas vivas', netInBar);
+
     // --- 9. la UI responde: abrir el panel encoge el hueco de la pagina ---
     const widthBefore = tabs.pageBounds.width;
     await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
@@ -157,6 +290,28 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
       tabs.pageBounds.width < widthBefore - 100,
       `${widthBefore} -> ${tabs.pageBounds.width}`,
     );
+
+    const widthOpen = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
+    const closed = await waitFor(() => tabs.pageBounds.width > widthOpen + 80, 4000);
+    check(
+      'el mismo boton cierra el panel',
+      closed && tabs.pageBounds.width > widthOpen + 80,
+      `${widthOpen} -> ${tabs.pageBounds.width}`,
+    );
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
+    await waitFor(() => tabs.pageBounds.width < widthBefore - 100, 4000);
+    const widthOpenAgain = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel-close').click()", true);
+    const closedByX = await waitFor(() => tabs.pageBounds.width > widthOpenAgain + 80, 4000);
+    check(
+      'la X del panel lo cierra',
+      closedByX && tabs.pageBounds.width > widthOpenAgain + 80,
+      `${widthOpenAgain} -> ${tabs.pageBounds.width}`,
+    );
+    await window.webContents.executeJavaScript("document.querySelector('#btn-panel').click()", true);
+    await waitFor(() => tabs.pageBounds.width < widthBefore - 100, 4000);
+
     await wait(1500);
     await shot('05-panel-recursos', window.webContents);
 
@@ -194,6 +349,93 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
       JSON.stringify(applied),
     );
 
+    const neonClicked = await window.webContents.executeJavaScript(
+      `(() => {
+        const card = [...document.querySelectorAll('.theme-card')].find((el) => /ne[oó]n rojo/i.test(el.textContent));
+        if (!card) return false;
+        card.click();
+        return true;
+      })()`,
+      true,
+    );
+    await wait(700);
+    const glow = await window.webContents.executeJavaScript(
+      "document.documentElement.style.getPropertyValue('--glow-strength').trim()",
+      true,
+    );
+    check('el tema neon rojo existe y se aplica', neonClicked && glow === '18px', `glow=${glow}`);
+    await shot('07-tema-neon-rojo', window.webContents);
+
+    const moved = await window.webContents.executeJavaScript(
+      `(() => {
+        const select = [...document.querySelectorAll('select')].find((el) =>
+          [...el.options].some((o) => o.value === 'left'),
+        );
+        if (!select) return false;
+        select.value = 'left';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`,
+      true,
+    );
+    await wait(700);
+    const railHidden = await window.webContents.executeJavaScript(
+      "document.getElementById('tabs-host-side')?.hidden === false && document.body.classList.contains('tabs-side')",
+      true,
+    );
+    check('las pestanas se pueden mover a un lado', moved && railHidden);
+    const widthSide = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript(
+      "document.documentElement.style.setProperty('--tab-rail', '320px')",
+      true,
+    );
+    const widened = await waitFor(() => tabs.pageBounds.width < widthSide - 60, 4000);
+    check(
+      'el rail izquierdo se puede ensanchar',
+      widened && tabs.pageBounds.width < widthSide - 60,
+      `${widthSide} -> ${tabs.pageBounds.width}`,
+    );
+    const widthWide = tabs.pageBounds.width;
+    await window.webContents.executeJavaScript(
+      `(() => {
+        document.documentElement.style.setProperty('--tab-rail', '52px');
+        document.body.classList.add('tabs-compact');
+      })()`,
+      true,
+    );
+    const compacted = await waitFor(() => tabs.pageBounds.width > widthWide + 80, 4000);
+    const titlesHidden = await window.webContents.executeJavaScript(
+      `(() => {
+        const title = document.querySelector('.tabs-host-side .tab-title');
+        return !title || getComputedStyle(title).display === 'none';
+      })()`,
+      true,
+    );
+    check(
+      'el rail se puede dejar en solo iconos',
+      compacted && titlesHidden,
+      `${widthWide} -> ${tabs.pageBounds.width}`,
+    );
+    await shot('08-pestanas-izquierda', window.webContents);
+    await window.webContents.executeJavaScript(
+      `(() => {
+        const select = [...document.querySelectorAll('select')].find((el) =>
+          [...el.options].some((o) => o.value === 'top'),
+        );
+        if (!select) return;
+        select.value = 'top';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`,
+      true,
+    );
+    await wait(400);
+
+    await window.webContents.executeJavaScript(
+      `([...document.querySelectorAll('.theme-card')].find((el) => /noche/i.test(el.textContent)) || document.querySelector('.theme-card'))?.click()`,
+      true,
+    );
+    await wait(400);
+
     // --- 12. la ventana es de verdad translucida ---
     if (windowMode === 'transparent') {
       const image = await withTimeout(window.webContents.capturePage(), 6000);
@@ -222,6 +464,31 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     const opened = await waitFor(() => tabs.order.length === tabsBefore + 1, 4000);
     check('Ctrl+T abre una pestana', opened, `${tabsBefore} -> ${tabs.order.length}`);
 
+    // --- 13b. los popups de OAuth conservan window.opener ---
+    const page = tabs.tabs.get(tabs.activeId)?.view?.webContents;
+    if (page && !page.isDestroyed()) {
+      const shellsBefore = new Set(host ? host.list().map((s) => s.window.id) : [window.id]);
+      const beforePopups = BrowserWindow.getAllWindows().length;
+      const openerOk = await withTimeout(
+        page.executeJavaScript(
+          `(() => {
+            const w = window.open('about:blank', 'orbit_oauth_test', 'width=420,height=520');
+            return Boolean(w && w.opener === window);
+          })()`,
+          true,
+        ),
+        4000,
+      );
+      check('window.open conserva window.opener', openerOk === true, String(openerOk));
+      const popped = await waitFor(() => BrowserWindow.getAllWindows().length > beforePopups, 4000);
+      check('window.open con tamano abre un popup', popped, `${BrowserWindow.getAllWindows().length} ventanas`);
+      for (const extra of BrowserWindow.getAllWindows()) {
+        if (extra.isDestroyed()) continue;
+        if (extra.id === window.id || shellsBefore.has(extra.id)) continue;
+        extra.close();
+      }
+    }
+
     // --- 14. los ajustes llegan al disco ---
     const settingsFile = path.join(app.getPath('userData'), 'settings.json');
     settingsModule.patchSettings({ appearance: { radius: 21 } });
@@ -230,6 +497,40 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode }) {
     check('los ajustes se guardan en disco', onDisk.appearance?.radius === 21, `radius = ${onDisk.appearance?.radius}`);
     settingsModule.patchSettings({ appearance: { radius: 14 } });
     settingsModule.saveSettingsNow();
+
+    const { storeSource } = require('./source-view');
+    const sourceToken = storeSource({ url: 'https://example.com/', html: '<html><body>fuente-orbit</body></html>' });
+    const srcId = tabs.create(`orbit://source/${sourceToken}`, { active: true });
+    const srcOk = await waitFor(() => {
+      const t = tabs.tabs.get(srcId);
+      return Boolean(t && !t.loading && !t.error && /orbit:\/\/source\//.test(t.url));
+    }, 8000);
+    const srcText = srcOk
+      ? await withTimeout(tabs.tabs.get(srcId).view.webContents.executeJavaScript('document.body.innerText', true), 3000)
+      : '';
+    check('el visor de fuente muestra el documento', Boolean(srcOk && /fuente-orbit/.test(srcText || '')), String(srcText).slice(0, 80));
+
+    // --- 16. arrastrar una pestana fuera abre otra ventana ---
+    if (host) {
+      const beforeWindows = host.list().length;
+      const extraId = tabs.create('https://example.com/', { active: true });
+      await waitFor(() => {
+        const t = tabs.tabs.get(extraId);
+        return t && !t.loading && /example\.com/.test(t.url);
+      }, 12000);
+      const bounds = window.getBounds();
+      host.tearOff(host.list().find((s) => s.window === window) ?? host.list()[0], extraId, {
+        x: bounds.x + bounds.width + 80,
+        y: bounds.y + 48,
+      });
+      const torn = await waitFor(() => host.list().length === beforeWindows + 1, 6000);
+      check('separar una pestana abre otra ventana', torn, `${host.list().length} ventanas`);
+      const other = host.list().find((s) => s.window !== window);
+      check('la pestana vive en la ventana nueva', Boolean(other?.tabs.order.length), `${other?.tabs.order.length ?? 0} pestanas`);
+      check('la ventana original conserva pestanas', tabs.order.length >= 1, `${tabs.order.length} pestanas`);
+      if (other && !other.window.isDestroyed()) other.window.close();
+      await waitFor(() => host.list().length === beforeWindows, 4000);
+    }
 
     // --- 15. errores de consola en la UI ---
     check('la UI no dejo errores en consola', consoleErrors.length === 0, consoleErrors.join(' | ') || 'ninguno');
@@ -258,6 +559,22 @@ function watchConsole(window) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Cierra pestanas y ventanas de tandas anteriores y deja solo el inicio. */
+async function resetWorkspace({ tabs, host, window }) {
+  if (host) {
+    for (const extra of host.list()) {
+      if (extra.window !== window && !extra.window.isDestroyed()) extra.window.close();
+    }
+  }
+  const start = settingsModule.getSettings().browsing.startPage;
+  for (const id of [...tabs.order]) tabs.close(id);
+  tabs.create(start, { active: true });
+  await waitFor(() => {
+    const t = tabs.tabs.get(tabs.activeId);
+    return Boolean(t?.view && !t.loading && /orbit:\/\/start/i.test(t.url || ''));
+  }, 8000);
 }
 
 /** Resuelve a `null` si la promesa tarda mas de `ms`. */

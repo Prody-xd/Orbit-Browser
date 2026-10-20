@@ -9,15 +9,23 @@ import { icons } from './icons.js';
  * motivos. No consulta metricas del sistema: eso solo ocurre con el panel
  * abierto, para que ver el consumo no sea en si mismo un consumo.
  */
-export function createToolbar({ onOpenPanel }) {
+export function createToolbar({ onOpenPanel, onClosePanel }) {
   const back = $('#nav-back');
   const forward = $('#nav-forward');
   const reload = $('#nav-reload');
   const omnibox = $('#omnibox');
   const scheme = $('#omnibox-scheme');
   const stats = $('#tab-stats');
+  const netBtn = $('#btn-network');
+  const netIcon = $('#net-icon');
+  const netCount = $('#net-count');
+  const dlBtn = $('#btn-downloads');
+  const dlIcon = $('#dl-icon');
+  const dlLabel = $('#dl-label');
+  const dlBar = $('#dl-bar');
   const sleepOthers = $('#btn-sleep-others');
   const panelButton = $('#btn-panel');
+  const panelClose = $('#btn-panel-close');
   const newTab = $('#btn-new-tab');
   const pageError = $('#page-error');
 
@@ -26,7 +34,10 @@ export function createToolbar({ onOpenPanel }) {
   reload.innerHTML = icons.reload;
   sleepOthers.innerHTML = icons.moon;
   panelButton.innerHTML = icons.settings;
+  if (panelClose) panelClose.innerHTML = icons.close;
   newTab.innerHTML = icons.plus;
+  if (netIcon) netIcon.innerHTML = icons.fetch;
+  if (dlIcon) dlIcon.innerHTML = icons.download;
 
   let active = null;
   let editing = false;
@@ -40,7 +51,28 @@ export function createToolbar({ onOpenPanel }) {
   });
   newTab.addEventListener('click', () => window.orbit.tabs.create(null, { active: true }));
   sleepOthers.addEventListener('click', () => window.orbit.tabs.sleepOthers());
-  panelButton.addEventListener('click', onOpenPanel);
+  netBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const box = netBtn.getBoundingClientRect();
+    window.orbit.network.menu({ x: box.right, y: box.bottom + 6 });
+  });
+  dlBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const box = dlBtn.getBoundingClientRect();
+    window.orbit.downloads.menu({ x: box.right, y: box.bottom + 6 });
+  });
+  panelButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    onOpenPanel();
+  });
+  panelClose?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    onClosePanel?.();
+  });
 
   omnibox.addEventListener('focus', () => {
     editing = true;
@@ -116,5 +148,39 @@ export function createToolbar({ onOpenPanel }) {
     }
   }
 
-  return { render, focusOmnibox: () => omnibox.focus(), getActive: () => active };
+  function renderNetwork(snapshot) {
+    if (!netBtn || !netCount) return;
+    const count = Number(snapshot?.count) || 0;
+    netCount.textContent = formatNetCount(count);
+    netBtn.classList.toggle('has-traffic', count > 0);
+    netBtn.title =
+      count === 0
+        ? 'Solicitudes fetch de esta pestaña'
+        : `${count} ${count === 1 ? 'solicitud fetch' : 'solicitudes fetch'} · clic para ver endpoints`;
+  }
+
+  function renderDownloads(snapshot) {
+    if (!dlBtn) return;
+    const busy = Boolean(snapshot?.busy);
+    const percent = Number(snapshot?.percent) || 0;
+    const active = Number(snapshot?.active) || 0;
+    dlBtn.classList.toggle('is-busy', busy);
+    if (dlLabel) dlLabel.textContent = busy ? `${percent}%` : '';
+    if (dlBar) {
+      dlBar.hidden = !busy;
+      const fill = dlBar.firstElementChild;
+      if (fill) fill.style.width = `${percent}%`;
+    }
+    dlBtn.title = busy
+      ? `${active} ${active === 1 ? 'descarga' : 'descargas'} · ${percent}%`
+      : 'Descargas';
+  }
+
+  return { render, renderNetwork, renderDownloads, focusOmnibox: () => omnibox.focus(), getActive: () => active };
+}
+
+function formatNetCount(n) {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${Math.round(n / 1000)}k`;
 }

@@ -99,6 +99,21 @@ function registerProtocol(sessions = []) {
       });
     }
 
+    if (name === 'source') {
+      const { takeSource, sourcePage } = require('./source-view');
+      const id = url.pathname.replace(/^\//, '').split('/')[0];
+      const entry = takeSource(id);
+      if (!entry) {
+        return new Response('Fuente no disponible', {
+          status: 404,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        });
+      }
+      return new Response(sourcePage(entry), {
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+      });
+    }
+
     const sub = url.pathname === '/' || url.pathname === '' ? 'index.html' : url.pathname.slice(1);
 
     const target = path.resolve(PAGES_DIR, name, sub);

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Diálogo</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="scrim" id="scrim">
+      <div class="card" id="card" role="alertdialog" aria-modal="true" aria-labelledby="title" aria-describedby="message">
+        <h1 id="title"></h1>
+        <p id="message"></p>
+        <input id="prompt" type="text" spellcheck="false" autocomplete="off" hidden />
+        <label class="suppress" id="suppress-wrap" hidden>
+          <input type="checkbox" id="suppress" />
+          Evitar que esta página cree más diálogos
+        </label>
+        <div class="actions">
+          <button type="button" class="btn" id="btn-cancel" hidden>Cancelar</button>
+          <button type="button" class="btn primary" id="btn-ok">Aceptar</button>
+        </div>
+      </div>
+    </div>
+    <script src="dialog.js"></script>
+  </body>
+</html>

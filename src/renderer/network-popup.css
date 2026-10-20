@@ -1,0 +1,126 @@
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--c-text);
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  margin: 1px;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid rgb(var(--rgb-border) / calc(0.7 + var(--glow-alpha) * 0.25));
+  background: rgb(var(--rgb-chrome) / 0.94);
+  backdrop-filter: blur(var(--blur));
+  box-shadow:
+    0 18px 48px rgb(0 0 0 / 0.38),
+    0 0 calc(var(--glow-strength) * 0.7) rgb(var(--rgb-border) / var(--glow-alpha));
+  overflow: hidden;
+}
+
+.head {
+  flex: 0 0 auto;
+  padding: 11px 14px 9px;
+  font-size: 0.82em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  border-bottom: 1px solid rgb(var(--rgb-border) / 0.55);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+
+.list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.list::-webkit-scrollbar-thumb {
+  background: rgb(var(--rgb-border) / 0.8);
+  border-radius: 8px;
+}
+
+.empty {
+  padding: 16px 12px;
+  color: var(--c-muted);
+  font-size: 0.92em;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 2.4em 1fr;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--c-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: rgb(var(--rgb-accent) / 0.16);
+  color: var(--c-accent);
+}
+
+.row b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  color: var(--c-accent);
+}
+
+.row span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.more {
+  padding: 6px 12px 8px;
+  color: var(--c-muted);
+  font-size: 0.82em;
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-top: 1px solid rgb(var(--rgb-border) / 0.55);
+}
+
+.foot button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--c-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.foot button:hover:not(:disabled) {
+  background: rgb(var(--rgb-elevated) / 0.9);
+}
+
+.foot button:disabled {
+  color: var(--c-muted);
+  opacity: 0.5;
+  cursor: default;
+}

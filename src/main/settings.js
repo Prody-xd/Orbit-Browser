@@ -31,6 +31,10 @@ const DEFAULTS = {
     fontScale: 1,
     /** Desenfoque CSS interno del chrome (no afecta al escritorio). */
     chromeBlur: 20,
+    /** top | left | right */
+    tabStrip: 'top',
+    /** Ancho del rail de pestañas cuando está a un lado. */
+    tabStripWidth: 214,
   },
 
   resources: {
@@ -74,6 +78,8 @@ const DEFAULTS = {
     restoreSession: true,
     /** Pestanas restauradas arrancan dormidas: inicio instantaneo. */
     restoreAsleep: true,
+    /** Recordar texto de formularios en paginas visitadas a menudo. */
+    rememberForms: true,
   },
 };
 

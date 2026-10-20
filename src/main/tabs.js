@@ -3,6 +3,9 @@
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { WebContentsView, shell } = require('electron');
+const { attachWindowOpen } = require('./popups');
+const { createTabDialogs, attachPageDialogs } = require('./js-dialogs');
+const { getForms, pageKey } = require('./forms');
 
 const PARTITION = 'persist:orbit';
 const PAGE_BACKGROUND = '#16161e';
@@ -35,9 +38,28 @@ class TabManager extends EventEmitter {
     this.nextId = 1;
     this.pageBounds = { x: 0, y: 0, width: 800, height: 600 };
     this.borderRadius = 0;
+    this._ignorePageMouse = false;
+    this._boundsReady = false;
+    this.findBarOpen = false;
+    this.jsDialogs = createTabDialogs(this);
 
     this._sweepTimer = setInterval(() => this._sweepIdle(), 15_000);
     if (typeof this._sweepTimer.unref === 'function') this._sweepTimer.unref();
+  }
+
+  /** Relaciona el id de un WebContents de pagina con la pestana que lo posee. */
+  idFromWebContentsId(webContentsId) {
+    if (webContentsId == null) return null;
+    for (const tab of this.tabs.values()) {
+      if (tab.view && !tab.view.webContents.isDestroyed() && tab.view.webContents.id === webContentsId) {
+        return tab.id;
+      }
+    }
+    return null;
+  }
+
+  contentsId(id) {
+    return wcIdOf(this.tabs.get(id));
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -59,6 +81,7 @@ class TabManager extends EventEmitter {
       pinned: Boolean(opts.pinned),
       loading: false,
       audible: false,
+      muted: false,
       crashed: false,
       error: null,
       canGoBack: false,
@@ -66,6 +89,7 @@ class TabManager extends EventEmitter {
       lastActiveAt: Date.now(),
       scroll: { x: 0, y: 0 },
       _restoreScroll: false,
+      owner: this,
     };
 
     this.tabs.set(id, tab);
@@ -90,6 +114,7 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab) return;
 
+    const contentsId = wcIdOf(tab);
     this._destroyView(tab);
     this.tabs.delete(id);
     this.order = this.order.filter((x) => x !== id);
@@ -99,7 +124,81 @@ class TabManager extends EventEmitter {
       const next = this.order[this.order.length - 1];
       if (next != null) this.activate(next);
     }
+    this.emit('tab-closed', id, contentsId);
     this._emit();
+  }
+
+  /**
+   * Suelta una pestana viva para moverla a otra ventana. No destruye el
+   * proceso: el WebContentsView se reparenta en el destino.
+   */
+  detach(id) {
+    const tab = this.tabs.get(id);
+    if (!tab) return null;
+
+    if (tab.view) {
+      try {
+        this.window.contentView.removeChildView(tab.view);
+      } catch {
+        /* la ventana ya puede estar cerrada */
+      }
+      this._setViewVisible(tab.view, false);
+    }
+
+    this.tabs.delete(id);
+    this.order = this.order.filter((x) => x !== id);
+
+    if (this.activeId === id) {
+      this.activeId = null;
+      const next = this.order[this.order.length - 1];
+      if (next != null) this.activate(next);
+    }
+
+    this._emit();
+    this.jsDialogs.sync();
+    return tab;
+  }
+
+  /**
+   * Engancha una pestana que venia de otra ventana. Reasigna el id para no
+   * chocar con las de este TabManager.
+   */
+  attach(tab, { waitForBounds = false } = {}) {
+    if (!tab) return null;
+    tab.owner = this;
+    tab.id = this.nextId++;
+    this.tabs.set(tab.id, tab);
+    this.order.push(tab.id);
+
+    if (this.activeId != null && this.activeId !== tab.id) {
+      const prev = this.tabs.get(this.activeId);
+      if (prev?.view) this._setViewVisible(prev.view, false);
+    }
+
+    this.activeId = tab.id;
+    tab.lastActiveAt = Date.now();
+
+    if (tab.view) {
+      this.window.contentView.addChildView(tab.view);
+      if (this._ignorePageMouse && typeof tab.view.setIgnoreMouseEvents === 'function') {
+        tab.view.setIgnoreMouseEvents(true);
+      }
+      const showNow = this._boundsReady && !waitForBounds;
+      this._setViewVisible(tab.view, showNow);
+      if (showNow) this._applyBounds(tab);
+    } else {
+      this.wake(tab.id, { activating: true });
+      if (tab.view && (waitForBounds || !this._boundsReady)) {
+        this._setViewVisible(tab.view, false);
+      }
+    }
+
+    this._enforceLiveLimit();
+    this.emit('activated', tab.id);
+    this._emit();
+    this.jsDialogs.raise();
+    this.jsDialogs.sync();
+    return tab.id;
   }
 
   activate(id) {
@@ -121,7 +220,10 @@ class TabManager extends EventEmitter {
     }
 
     this._enforceLiveLimit();
+    this.emit('activated', id);
     this._emit();
+    this.jsDialogs.raise();
+    this.jsDialogs.sync();
   }
 
   // -------------------------------------------------------------- suspension
@@ -237,6 +339,15 @@ class TabManager extends EventEmitter {
     this._emit();
   }
 
+  setMuted(id, muted) {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    tab.muted = Boolean(muted);
+    const wc = tab.view?.webContents;
+    if (wc && !wc.isDestroyed()) wc.setAudioMuted(tab.muted);
+    this._emit();
+  }
+
   move(id, toIndex) {
     const from = this.order.indexOf(id);
     if (from < 0) return;
@@ -252,6 +363,19 @@ class TabManager extends EventEmitter {
 
   // ------------------------------------------------------------------ layout
 
+  /**
+   * Durante un arrastre del chrome (rail de pestañas), la pagina no debe
+   * comerse el cursor: es una vista nativa encima del HTML.
+   */
+  setPageIgnoreMouse(ignore) {
+    this._ignorePageMouse = Boolean(ignore);
+    for (const tab of this.tabs.values()) {
+      if (tab.view && typeof tab.view.setIgnoreMouseEvents === 'function') {
+        tab.view.setIgnoreMouseEvents(this._ignorePageMouse);
+      }
+    }
+  }
+
   /** El renderer manda el rectangulo del hueco de la pagina medido en CSS. */
   setPageBounds(bounds, radius = 0) {
     this.pageBounds = {
@@ -261,8 +385,44 @@ class TabManager extends EventEmitter {
       height: Math.max(1, Math.round(bounds.height)),
     };
     this.borderRadius = Math.round(radius);
+    this._boundsReady = true;
     const active = this.tabs.get(this.activeId);
-    if (active) this._applyBounds(active);
+    if (active?.view) {
+      this._setViewVisible(active.view, true);
+      this._applyBounds(active);
+    }
+    this.jsDialogs.layout();
+  }
+
+  /** Busca texto en la pestana con el resaltado nativo de Chromium. */
+  findInPage(id, text, opts = {}) {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    if (!tab.view) this.wake(id, { activating: id === this.activeId });
+    const wc = tab.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    const query = String(text ?? '');
+    if (!query) {
+      this.stopFind(id);
+      return;
+    }
+    // En Electron `findNext` se mapea a Blink `new_session`, no al
+    // `find_next` de Chromium: true = busqueda nueva, false = siguiente.
+    wc.findInPage(query, {
+      forward: opts.forward !== false,
+      findNext: !opts.findNext,
+      matchCase: Boolean(opts.matchCase),
+    });
+  }
+
+  stopFind(id) {
+    const wc = this.tabs.get(id)?.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    try {
+      wc.stopFindInPage('clearSelection');
+    } catch {
+      /* ya cerrada */
+    }
   }
 
   // ---------------------------------------------------------------- snapshot
@@ -282,6 +442,7 @@ class TabManager extends EventEmitter {
           pinned: t.pinned,
           loading: t.loading,
           audible: t.audible,
+          muted: Boolean(t.muted),
           crashed: t.crashed,
           error: t.error,
           canGoBack: t.canGoBack,
@@ -306,6 +467,7 @@ class TabManager extends EventEmitter {
 
   dispose() {
     clearInterval(this._sweepTimer);
+    this.jsDialogs.dispose();
     for (const tab of this.tabs.values()) this._destroyView(tab);
     this.tabs.clear();
     this.order = [];
@@ -333,15 +495,21 @@ class TabManager extends EventEmitter {
 
     view.setBackgroundColor(PAGE_BACKGROUND);
     tab.view = view;
+    if (this._ignorePageMouse && typeof view.setIgnoreMouseEvents === 'function') {
+      view.setIgnoreMouseEvents(true);
+    }
     this.window.contentView.addChildView(view);
     this._setViewVisible(view, false);
     this._applyBounds(tab);
     this._wire(tab);
+    this.jsDialogs.raise();
+    if (tab.muted) view.webContents.setAudioMuted(true);
 
     view.webContents.loadURL(tab.url).catch(() => {});
   }
 
   _destroyView(tab) {
+    this.jsDialogs.dismiss(tab);
     const view = tab.view;
     if (!view) return;
     tab.view = null;
@@ -371,26 +539,29 @@ class TabManager extends EventEmitter {
 
   _wire(tab) {
     const wc = tab.view.webContents;
+    const owner = () => tab.owner;
     const touch = () => {
+      const mgr = owner();
+      if (!mgr) return;
       const nav = wc.navigationHistory;
       tab.canGoBack = nav ? nav.canGoBack() : false;
       tab.canGoForward = nav ? nav.canGoForward() : false;
-      this._emit();
+      mgr._emit();
     };
 
     wc.on('page-title-updated', (_e, title) => {
       tab.title = title;
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('page-favicon-updated', (_e, icons) => {
       tab.favicon = icons?.[0] ?? null;
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('did-start-loading', () => {
       tab.loading = true;
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('did-stop-loading', () => {
@@ -399,14 +570,18 @@ class TabManager extends EventEmitter {
     });
 
     wc.on('did-navigate', (_e, url) => {
+      const mgr = owner();
       tab.url = url;
       tab.error = null;
+      noteFormVisit(tab, url);
+      mgr?.emit('main-navigate', tab.id);
       touch();
     });
 
     wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
       if (isMainFrame) {
         tab.url = url;
+        noteFormVisit(tab, url);
         touch();
       }
     });
@@ -415,7 +590,7 @@ class TabManager extends EventEmitter {
       // -3 = ERR_ABORTED: pasa al cancelar una navegacion, no es un error real.
       if (!isMainFrame || code === -3) return;
       tab.error = { code, description, url };
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('did-finish-load', () => {
@@ -428,41 +603,54 @@ class TabManager extends EventEmitter {
 
     wc.on('audio-state-changed', (event) => {
       tab.audible = Boolean(event?.audible ?? wc.isCurrentlyAudible());
-      this._emit();
+      owner()?._emit();
     });
 
     wc.on('render-process-gone', (_e, details) => {
       // Si Chromium mata el renderer (OOM, crash), lo tratamos como una
       // pestana dormida: la metadata sobrevive y se puede recargar.
+      const mgr = owner();
       tab.crashed = details?.reason !== 'clean-exit';
-      this._destroyView(tab);
+      mgr?._destroyView(tab);
       tab.sleeping = true;
       tab.loading = false;
-      this._emit();
+      mgr?._emit();
     });
 
-    wc.setWindowOpenHandler(({ url, disposition }) => {
-      if (disposition === 'foreground-tab' || disposition === 'background-tab' || disposition === 'new-window') {
-        this.create(url, { active: disposition === 'foreground-tab' });
-        return { action: 'deny' };
-      }
-      return { action: 'deny' };
+    wc.on('found-in-page', (_e, result) => {
+      owner()?.emit('find-result', { tabId: tab.id, result });
+    });
+
+    attachPageDialogs(wc, tab);
+
+    attachWindowOpen(wc, {
+      getParentWindow: () => owner()?.window ?? null,
+      openTab: (url, opts) => owner()?.create(url, opts),
     });
 
     wc.on('context-menu', (_e, params) => {
-      this.emit('page-context-menu', { tabId: tab.id, params });
+      owner()?.emit('page-context-menu', { tabId: tab.id, params });
     });
 
     wc.on('before-input-event', (event, input) => {
       // Los atajos del navegador tienen que funcionar tambien cuando el foco
       // esta dentro de la pagina, no solo en el chrome. Si no se interceptan
       // aqui, la pagina se los queda.
-      if (input.type !== 'keyDown') return;
+      const mgr = owner();
+      if (!mgr || input.type !== 'keyDown') return;
       const combo = comboOf(input);
-      if (combo && SHORTCUTS.has(combo)) {
+      if (combo === 'escape' && mgr.findBarOpen) {
         event.preventDefault();
-        this.emit('shortcut', combo);
+        if (input.isAutoRepeat) return;
+        mgr.emit('shortcut', combo);
+        return;
       }
+      if (!combo || !SHORTCUTS.has(combo)) return;
+      event.preventDefault();
+      // Ctrl+, y Escape basculan: el auto-repeat los dejaria abriendo y
+      // cerrando a la vez.
+      if (input.isAutoRepeat && (combo === 'ctrl+,' || combo === 'escape')) return;
+      mgr.emit('shortcut', combo);
     });
 
     wc.on('will-navigate', (event, url) => {
@@ -544,6 +732,15 @@ const SHORTCUTS = new Set([
   'ctrl+,',
   'alt+left',
   'alt+right',
+  'ctrl+f',
+  'ctrl+g',
+  'ctrl+shift+g',
+  'f3',
+  'shift+f3',
+  'ctrl+s',
+  'ctrl+p',
+  'ctrl+u',
+  'ctrl+shift+i',
   'f5',
   'f6',
   ...Array.from({ length: 9 }, (_, i) => `ctrl+${i + 1}`),
@@ -556,11 +753,22 @@ function comboOf(input) {
   if (input.control) parts.push('ctrl');
   if (input.alt) parts.push('alt');
   if (input.shift) parts.push('shift');
-  const named = { arrowleft: 'left', arrowright: 'right' }[key] ?? key;
+  const named = { arrowleft: 'left', arrowright: 'right', comma: ',' }[key] ?? key;
   parts.push(named);
   // Orden fijo: ctrl+alt+shift+tecla, para poder comparar cadenas.
   const order = { ctrl: 0, alt: 1, shift: 2 };
   return parts.sort((a, b) => (order[a] ?? 9) - (order[b] ?? 9)).join('+');
+}
+
+function noteFormVisit(tab, url) {
+  const key = pageKey(url);
+  if (!key || tab._formPageKey === key) return;
+  tab._formPageKey = key;
+  try {
+    getForms()?.noteVisit(url);
+  } catch {
+    /* settings aun no listos */
+  }
 }
 
 function hostOf(url) {
@@ -569,6 +777,12 @@ function hostOf(url) {
   } catch {
     return '';
   }
+}
+
+function wcIdOf(tab) {
+  const wc = tab?.view?.webContents;
+  if (!wc || wc.isDestroyed()) return null;
+  return wc.id;
 }
 
 function safePid(wc) {
@@ -592,6 +806,7 @@ module.exports = { TabManager, PARTITION };
  * @property {boolean} pinned
  * @property {boolean} loading
  * @property {boolean} audible
+ * @property {boolean} muted
  * @property {boolean} crashed
  * @property {{code:number,description:string,url:string}|null} error
  * @property {boolean} canGoBack
@@ -599,4 +814,5 @@ module.exports = { TabManager, PARTITION };
  * @property {number} lastActiveAt
  * @property {{x:number,y:number}} scroll
  * @property {boolean} _restoreScroll
+ * @property {TabManager|null} owner
  */

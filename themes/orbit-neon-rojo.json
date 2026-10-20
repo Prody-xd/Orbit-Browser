@@ -1,0 +1,19 @@
+{
+  "id": "orbit-neon-rojo",
+  "name": "Neón rojo",
+  "dark": true,
+  "neon": true,
+  "colors": {
+    "base": "#090003",
+    "chrome": "#140008",
+    "elevated": "#1d000c",
+    "text": "#ffe6ea",
+    "muted": "#b56b78",
+    "accent": "#ff2d4f",
+    "border": "#ff1e44",
+    "danger": "#ff5a73",
+    "ok": "#7dffb3",
+    "warn": "#ffb347",
+    "page": "#0c0005"
+  }
+}
