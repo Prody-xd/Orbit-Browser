@@ -22,7 +22,10 @@ npm install
 npm start
 ```
 
-Para usarlo sin comandos, genera el instalador de Windows:
+Para usarlo sin comandos, descarga el instalador de Windows desde
+[`releases/Orbit-Browser-Setup-0.1.0.exe`](releases/Orbit-Browser-Setup-0.1.0.exe).
+
+También puedes generarlo en local:
 
 ```bash
 npm run dist
