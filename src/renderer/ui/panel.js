@@ -781,6 +781,51 @@ export function createPanel({ container, tabsEl, state, onSectionChange, onLayou
           : null,
       ]),
     );
+
+    const perms = Array.isArray(state.permissions) ? state.permissions : [];
+    mount(
+      container,
+      h('div.section', {}, [
+        h('div.section-title', { text: 'Permisos de sitios' }),
+        h('div.hint', {
+          text: 'Cuando un sitio pide cámara, ubicación o notificaciones, Orbit pregunta y recuerda la respuesta aquí.',
+        }),
+        perms.length
+          ? h(
+              'div.perm-list',
+              {},
+              perms.map((entry) =>
+                h('div.perm-row', {}, [
+                  h('div.row-label', {}, [
+                    entry.host,
+                    h('small', { text: entry.label }),
+                  ]),
+                  select(
+                    [
+                      ['allow', 'Permitido'],
+                      ['deny', 'Bloqueado'],
+                    ],
+                    entry.decision,
+                    async (decision) => {
+                      state.permissions = await window.orbit.permissions.set(entry.origin, entry.permission, decision);
+                      render();
+                    },
+                  ),
+                  h('button.btn', {
+                    text: 'Quitar',
+                    on: {
+                      click: async () => {
+                        state.permissions = await window.orbit.permissions.remove(entry.origin, entry.permission);
+                        render();
+                      },
+                    },
+                  }),
+                ]),
+              ),
+            )
+          : h('div.hint', { text: 'Todavía no hay excepciones.' }),
+      ]),
+    );
   }
 
   // --- Sistema ---

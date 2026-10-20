@@ -18,6 +18,7 @@ const { createHost } = require('./host');
 const { initForms, getForms } = require('./forms');
 const { initDownloads, getDownloads } = require('./downloads');
 const { applyChromeCompat } = require('./chrome-compat');
+const { initPermissions, getPermissions } = require('./permissions');
 
 const SMOKE = process.env.VITRAL_SMOKE === '1';
 if (SMOKE) {
@@ -95,6 +96,16 @@ app.whenReady().then(async () => {
     onShell: (shell) => wireShell(shell, { network, downloads }),
   });
 
+  initPermissions({
+    ses: session.fromPartition(PARTITION),
+    getHost: () => host,
+    onChange: () => {
+      for (const s of host.list()) {
+        if (!s.window.isDestroyed()) s.window.webContents.send('permissions:changed', getPermissions()?.list() ?? []);
+      }
+    },
+  });
+
   registerIpc({
     host,
     metrics,
@@ -129,6 +140,7 @@ app.whenReady().then(async () => {
             host,
             downloads,
             forms,
+            permissions: getPermissions(),
           })
           .catch((err) => {
             console.error('[smoke] error:', err);
@@ -144,17 +156,10 @@ app.whenReady().then(async () => {
   }
 });
 
-/** Politica de permisos: nada se concede en silencio, salvo lo que un
- *  navegador necesita para sitios normales (pantalla completa, DRM). */
 function hardenSession() {
   const ses = session.fromPartition(PARTITION);
 
   applyChromeCompat(ses);
-
-  ses.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(isAllowedPermission(permission));
-  });
-  ses.setPermissionCheckHandler((_wc, permission) => isAllowedPermission(permission));
 
   // El chrome de Orbit no puede abrir ventanas sueltas. Las paginas de
   // usuario si: Google y otros SSO necesitan un popup con window.opener.
@@ -163,19 +168,6 @@ function hardenSession() {
       contents.setWindowOpenHandler(() => ({ action: 'deny' }));
     }
   });
-}
-
-function isAllowedPermission(permission) {
-  if (permission === 'fullscreen' || permission === 'clipboard-sanitized-write') return true;
-  // Equivale a "Permitir que los sitios reproduzcan contenido protegido".
-  if (permission === 'mediaKeySystem') {
-    try {
-      return getSettings().browsing?.protectedContent !== false;
-    } catch {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** Widevine CDM (Netflix, etc.). Solo existe en el Electron de Castlabs. */

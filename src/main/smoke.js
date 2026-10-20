@@ -17,7 +17,7 @@ const settingsModule = require('./settings');
  *
  * Uso: `npm run smoke`
  */
-async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, downloads, forms }) {
+async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, downloads, forms, permissions }) {
   const outDir = path.join(app.getAppPath(), 'out', 'smoke');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -278,6 +278,54 @@ async function runSmoke({ window, tabs, metrics, blocker, windowMode, host, down
       Boolean(drm && drm.eme !== 'NotAllowedError'),
       drm?.eme ?? 'sin respuesta',
     );
+    if (permissions) {
+      permissions.set('https://maps.example', ['geolocation'], 'allow');
+      check('recuerda permitir un permiso', permissions.isGranted('https://maps.example', 'geolocation'));
+      permissions.set('https://maps.example', ['geolocation'], 'deny');
+      check(
+        'recuerda bloquear un permiso',
+        permissions.get('https://maps.example', 'geolocation') === 'deny' &&
+          !permissions.isGranted('https://maps.example', 'geolocation'),
+      );
+      permissions.remove('https://maps.example', 'geolocation');
+      check(
+        'quitar deja el permiso sin excepcion',
+        permissions.get('https://maps.example', 'geolocation') == null,
+      );
+
+      const permPage = netState?.view?.webContents;
+      if (permPage && !permPage.isDestroyed()) {
+        const asked = permPage.executeJavaScript('Notification.requestPermission()', true);
+        const opened = await waitFor(() => Boolean(permissions.overlayContents()), 6000);
+        check('pedir notificaciones abre el dialogo', opened);
+        if (opened && permissions.overlayContents()) {
+          await wait(250);
+          const permText = await withTimeout(
+            permissions.overlayContents().executeJavaScript(
+              `JSON.stringify({
+                title: document.getElementById('title')?.textContent || '',
+                message: document.getElementById('message')?.textContent || '',
+                ok: document.getElementById('btn-ok')?.textContent || '',
+              })`,
+              true,
+            ),
+            2000,
+          );
+          check(
+            'el dialogo nombra el sitio y el permiso',
+            /example\.com/i.test(permText) && /notif/i.test(permText) && /Permitir/i.test(permText),
+            String(permText),
+          );
+          await permissions.overlayContents().executeJavaScript("document.getElementById('btn-ok')?.click()", true);
+        }
+        const granted = await withTimeout(asked, 4000);
+        check('permitir notificaciones se aplica', granted === 'granted', String(granted));
+        check(
+          'el permiso queda en excepciones',
+          permissions.list().some((entry) => entry.permission === 'notifications' && entry.decision === 'allow'),
+        );
+      }
+    }
     if (netState?.view) await shot('03-pagina-web', netState.view.webContents);
     await shot('04-shell-dos-pestanas', window.webContents);
 

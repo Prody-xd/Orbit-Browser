@@ -16,6 +16,7 @@ medias.
 - Página de inicio interna y protocolo `orbit://`
 - Restauración de sesión, con opción de restaurar dormidas
 - Verificación automatizada (`npm run smoke`)
+- Permisos con pregunta por sitio y lista de excepciones
 
 ## Siguiente: lo que más se echa en falta al usarlo a diario
 
@@ -42,19 +43,15 @@ medias.
    Una partición de sesión por perfil (`persist:trabajo`, `persist:personal`).
    La arquitectura ya lo permite: `PARTITION` está en un solo sitio.
 
-7. **Permisos con pregunta**
-   Ahora se deniega casi todo en silencio. Falta el diálogo por sitio y la lista
-   de excepciones.
-
-8. **Temas para páginas internas y para el editor**
+7. **Temas para páginas internas y para el editor**
    El protocolo ya sirve `orbit://theme/theme.css`. Falta un editor de temas
    dentro del panel, en vez de editar JSON a mano.
 
-9. **Presupuesto de recursos por sitio**
+8. **Presupuesto de recursos por sitio**
    Reglas como «este dominio nunca duerme» o «este siempre con imágenes
    congeladas». Es la extensión natural del panel de recursos.
 
-10. **Grupos de pestañas y barra lateral vertical**
+9. **Grupos de pestañas y barra lateral vertical**
     Con muchas pestañas, la barra horizontal se queda corta.
 
 ## Más adelante

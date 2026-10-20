@@ -6,6 +6,7 @@ const themes = require('./themes');
 const { showPageMenu, showTabMenu, handlePageShortcut } = require('./menus');
 const { showNetworkPopup } = require('./network-popup');
 const { showDownloadsPopup } = require('./downloads-popup');
+const { getPermissions } = require('./permissions');
 
 /**
  * Puente entre la UI y el proceso principal.
@@ -179,6 +180,16 @@ function registerIpc(ctx) {
   ipcMain.handle('blocker:reload', () => {
     blocker.loadUserLists();
     return blocker.stats();
+  });
+
+  ipcMain.handle('permissions:list', () => getPermissions()?.list() ?? []);
+  ipcMain.handle('permissions:set', (_e, origin, permission, decision) => {
+    getPermissions()?.set(origin, [permission], decision === 'allow' ? 'allow' : 'deny');
+    return getPermissions()?.list() ?? [];
+  });
+  ipcMain.handle('permissions:remove', (_e, origin, permission) => {
+    getPermissions()?.remove(origin, permission);
+    return getPermissions()?.list() ?? [];
   });
 
   // --- ventana ---

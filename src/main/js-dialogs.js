@@ -354,4 +354,4 @@ function rgbTriplet(hex) {
   return `${(num >> 16) & 255} ${(num >> 8) & 255} ${num & 255}`;
 }
 
-module.exports = { createTabDialogs, attachPageDialogs, attachWindowDialogs };
+module.exports = { createTabDialogs, attachPageDialogs, attachWindowDialogs, DialogOverlay, chromeVars, hostLabel };

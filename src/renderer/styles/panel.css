@@ -162,6 +162,29 @@
   align-self: start;
 }
 
+.perm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.perm-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.perm-row .row-label {
+  min-width: 0;
+}
+
+.perm-row select {
+  width: auto;
+  max-width: 120px;
+}
+
 /* --- controles --- */
 
 .switch {

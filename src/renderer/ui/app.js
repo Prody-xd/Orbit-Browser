@@ -27,6 +27,7 @@ const state = {
   appliedSwitches: [],
   tabs: { activeId: null, tabs: [] },
   blockerStats: null,
+  permissions: [],
 };
 
 let panelOpen = false;
@@ -141,6 +142,7 @@ async function togglePanel(force) {
     // Las metricas solo se muestrean con el panel abierto: mirar el consumo no
     // deberia ser una de las cosas que consume.
     if (!state.blockerStats) state.blockerStats = await api.resources.blockerStats();
+    state.permissions = await api.permissions.list();
     panel.render();
     panel.setSample(await api.resources.subscribe());
   } else {
@@ -150,6 +152,11 @@ async function togglePanel(force) {
 
 api.resources.onSample((sample) => {
   if (panelOpen) panel.setSample(sample);
+});
+
+api.permissions.onChange((list) => {
+  state.permissions = Array.isArray(list) ? list : [];
+  if (panelOpen) panel.render();
 });
 
 // -------------------------------------------------------------- atajos

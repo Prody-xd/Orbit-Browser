@@ -441,6 +441,11 @@ class TabManager extends EventEmitter {
       this._applyBounds(active);
     }
     this.jsDialogs.layout();
+    try {
+      require('./permissions').getPermissions()?.layoutAll();
+    } catch {
+      /* permisos aun no listos */
+    }
   }
 
   /** Recolorea el lienzo de cada pestana (p. ej. al cambiar el tema). */

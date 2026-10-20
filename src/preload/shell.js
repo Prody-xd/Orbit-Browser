@@ -86,6 +86,13 @@ contextBridge.exposeInMainWorld('orbit', {
     reloadBlocklist: () => ipcRenderer.invoke('blocker:reload'),
   },
 
+  permissions: {
+    list: () => ipcRenderer.invoke('permissions:list'),
+    set: (origin, permission, decision) => ipcRenderer.invoke('permissions:set', origin, permission, decision),
+    remove: (origin, permission) => ipcRenderer.invoke('permissions:remove', origin, permission),
+    onChange: on('permissions:changed'),
+  },
+
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
     toggleMaximize: () => ipcRenderer.send('window:toggleMaximize'),
